@@ -1,0 +1,21 @@
+{
+  "name": "@chart/node-red-rmf",
+  "version": "1.0.0",
+  "description": "CHART's Node-RED RMF Nodes",
+  "license": "ISC",
+  "author": "CHART",
+  "type": "commonjs",
+  "main": "index.js",
+  "keywords": ["node-red", "rmf", "chart"],
+  "node-red": {
+    "version": ">=1.3.0",
+    "nodes": {
+      "test-node": "nodes/test-node.js"
+    }
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "validate": "node scripts/validate-subflows.js",
+    "add-subflow": "node scripts/add-subflow.js"
+  }
+}

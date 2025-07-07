@@ -1,0 +1,73 @@
+{
+    "id": "4800c8a001b5297f",
+    "type": "subflow",
+    "name": "Test Node",
+    "info": "",
+    "category": "RMF",
+    "in": [
+        {
+            "x": 50,
+            "y": 30,
+            "wires": [
+                {
+                    "id": "114e17cae314a296"
+                }
+            ]
+        }
+    ],
+    "out": [],
+    "env": [
+        {
+            "name": "message",
+            "type": "str",
+            "value": "hello-word"
+        }
+    ],
+    "meta": {},
+    "color": "#DDAA99",
+    "flow":[
+        {
+            "id": "114e17cae314a296",
+            "type": "change",
+            "z": "4800c8a001b5297f",
+            "name": "",
+            "rules": [
+                {
+                    "t": "set",
+                    "p": "payload",
+                    "pt": "msg",
+                    "to": "message",
+                    "tot": "env"
+                }
+            ],
+            "action": "",
+            "property": "",
+            "from": "",
+            "to": "",
+            "reg": false,
+            "x": 190,
+            "y": 40,
+            "wires": [
+                [
+                    "fa1a4ca49378023d"
+                ]
+            ]
+        },
+        {
+            "id": "fa1a4ca49378023d",
+            "type": "debug",
+            "z": "4800c8a001b5297f",
+            "name": "debug 1",
+            "active": true,
+            "tosidebar": true,
+            "console": false,
+            "tostatus": false,
+            "complete": "false",
+            "statusVal": "",
+            "statusType": "auto",
+            "x": 380,
+            "y": 40,
+            "wires": []
+        }
+    ]
+}
