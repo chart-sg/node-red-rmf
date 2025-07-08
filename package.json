@@ -6,7 +6,11 @@
   "author": "CHART",
   "type": "commonjs",
   "main": "index.js",
-  "keywords": ["node-red", "rmf", "chart"],
+  "keywords": [
+    "node-red",
+    "rmf",
+    "chart"
+  ],
   "node-red": {
     "version": ">=1.3.0",
     "nodes": {

@@ -12,17 +12,16 @@ function formatSubflowJson(rawData) {
     if (Array.isArray(rawData)) {
         console.log('🔄 Converting raw export format...');
         
-        // Find the subflow definition (second to last) and instance (last)
-        const subflowDefinition = rawData[rawData.length - 2];
-        const subflowInstance = rawData[rawData.length - 1];
+        // Find the subflow definition anywhere in the array
+        const subflowDefinition = rawData.find(node => node.type === 'subflow');
         
         // Validate we have a subflow definition
-        if (!subflowDefinition || subflowDefinition.type !== 'subflow') {
+        if (!subflowDefinition) {
             throw new Error('Could not find subflow definition in exported JSON');
         }
         
-        // Get all the flow nodes (everything except the subflow definition and instance)
-        const flowNodes = rawData.slice(0, -2);
+        // Get all the flow nodes (everything except the subflow definition)
+        const flowNodes = rawData.filter(node => node.type !== 'subflow');
         
         // Create the properly formatted subflow
         const formattedSubflow = {
@@ -62,6 +61,34 @@ function addSubflow(name, subflowJsonPath) {
         
         // Format the subflow JSON
         const formattedSubflow = formatSubflowJson(rawData);
+        
+        // Generate a unique ID for this subflow to avoid conflicts
+        const originalId = formattedSubflow.id;
+        const uniqueId = kebabName + '-' + Math.random().toString(36).substr(2, 10);
+        
+        // Update the subflow with unique ID, name, and category
+        formattedSubflow.id = uniqueId;
+        formattedSubflow.name = name;
+        formattedSubflow.category = "CHART RMF";
+        
+        // Update all references to the old ID with the new unique ID
+        if (formattedSubflow.out) {
+            formattedSubflow.out = formattedSubflow.out.map(output => ({
+                ...output,
+                wires: output.wires ? output.wires.map(wire => ({
+                    ...wire,
+                    id: wire.id === originalId ? uniqueId : wire.id
+                })) : output.wires
+            }));
+        }
+        
+        // Update flow nodes to reference the new subflow ID
+        if (formattedSubflow.flow) {
+            formattedSubflow.flow = formattedSubflow.flow.map(node => ({
+                ...node,
+                z: node.z === originalId ? uniqueId : node.z
+            }));
+        }
         
         // Validate the formatted subflow
         if (!formattedSubflow.id || !formattedSubflow.name) {

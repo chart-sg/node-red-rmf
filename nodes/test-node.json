@@ -1,9 +1,9 @@
 {
     "id": "4800c8a001b5297f",
     "type": "subflow",
-    "name": "Test Node",
+    "name": "Test Node v2",
     "info": "",
-    "category": "RMF",
+    "category": "CHART RMF",
     "in": [
         {
             "x": 50,

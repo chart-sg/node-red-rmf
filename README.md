@@ -49,7 +49,7 @@ You can add new subflows using the automated script:
 
 ```bash
 # Add a new subflow from Node-RED export
-npm run add-subflow "My New RMF Node" path/to/exported/subflow.json
+npm run add-subflow "My New RMF Node" exportjson/subflow.json
 ```
 
 The script handles both:
@@ -62,6 +62,7 @@ The script handles both:
    - Create your subflow in Node-RED
    - Add an instance to the workspace
    - Export the selected nodes as JSON
+   - Save inside /exportjson folder
 
 2. **Add to project**:
    - Use the add-subflow script (recommended)
