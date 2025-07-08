@@ -50,6 +50,9 @@ You can add new subflows using the automated script:
 ```bash
 # Add a new subflow from Node-RED export
 npm run add-subflow "My New RMF Node" exportjson/subflow.json
+
+# For nested subflows use add-nested-subflow instead
+npm run add-nested-subflow "My New RMF Node" exportjson/nested-subflow.json
 ```
 
 The script handles both:
