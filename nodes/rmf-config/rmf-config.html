@@ -1,0 +1,49 @@
+<script type="text/javascript">
+  RED.nodes.registerType('rmf-config', {
+    category: 'config',
+    color: '#C0DEED',
+    defaults: {
+      name: { value: '' },
+      host: { value: '', required: true },
+      port: { value: '', required: true },
+      jwt: { value: '', required: true },
+      rosDomain: { value: '0', required: true }
+    },
+    inputs: 0,
+    outputs: 0,
+    icon: 'font-awesome/fa-cogs',
+    paletteLabel: 'RMF Config',
+    labelStyle: 'node_label_italic',
+    label: function () {
+      return this.name || 'rmf-config';
+    },
+    hasUsers: false
+  });
+</script>
+
+<script type="text/html" data-template-name="rmf-config">
+  <div class="form-row">
+    <label for="node-config-input-name">Name</label>
+    <input type="text" id="node-config-input-name" />
+  </div>
+  <div class="form-row">
+    <label for="node-config-input-host">RMF Host</label>
+    <input type="text" id="node-config-input-host" />
+  </div>
+  <div class="form-row">
+    <label for="node-config-input-port">Port</label>
+    <input type="text" id="node-config-input-port" />
+  </div>
+  <div class="form-row">
+    <label for="node-config-input-jwt">JWT Token</label>
+    <input type="text" id="node-config-input-jwt" />
+  </div>
+  <div class="form-row">
+    <label for="node-config-input-rosDomain">ROS 2 Domain ID</label>
+    <input type="text" id="node-config-input-rosDomain" />
+  </div>
+</script>
+
+<script type="text/html" data-help-name="rmf-config">
+  <p>Configure connection settings for RMF Web API and ROS 2 Domain.</p>
+</script>
