@@ -1,3 +1,46 @@
+// Process building map from service response
+function processBuildingMapFromService(buildingMap, context, updateCallback) {
+  try {
+    console.log('RMF: processBuildingMapFromService called');
+    if (!buildingMap) {
+      console.warn('RMF: No building map data received from service');
+      return;
+    }
+    context.buildingMap = buildingMap;
+
+    // Extract locations from all levels and graphs
+    const locations = [];
+    if (buildingMap.levels && Array.isArray(buildingMap.levels)) {
+      buildingMap.levels.forEach(level => {
+        if (level.nav_graphs && Array.isArray(level.nav_graphs)) {
+          level.nav_graphs.forEach(graph => {
+            if (graph.vertices && Array.isArray(graph.vertices)) {
+              graph.vertices.forEach(vertex => {
+                if (vertex.name && vertex.name.trim()) {
+                  locations.push({
+                    name: vertex.name,
+                    level: level.name || 'unknown',
+                    x: vertex.x,
+                    y: vertex.y,
+                    params: vertex.params || {}
+                  });
+                }
+              });
+            }
+          });
+        }
+      });
+    }
+    context.locations = locations;
+    context.lastUpdated.locations = new Date().toISOString();
+    if (updateCallback) {
+      updateCallback();
+    }
+    console.log(`RMF: Extracted ${locations.length} locations from building map service`);
+  } catch (error) {
+    console.error('RMF: Failed to process building map from service:', error.message);
+  }
+}
 // File: nodes/lib/rmfDataProcessors.js
 
 function processBuildingMapData(msg, context, updateCallback) {
@@ -171,6 +214,7 @@ function processLiftStateData(msg, context, updateCallback) {
 
 module.exports = {
   processBuildingMapData,
+  processBuildingMapFromService,
   processFleetStateData,
   processDoorStateData,
   processLiftStateData

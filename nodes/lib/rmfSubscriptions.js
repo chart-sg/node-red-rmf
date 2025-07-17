@@ -52,23 +52,23 @@ class RMFSubscriptions {
 
     try {
       console.log('RMF: Setting up RMF topic subscriptions...');
-      
+
       // Setup service clients first
       await this.setupServiceClients();
-      
-      // Then setup topic subscriptions
-      await this.setupBuildingMapSubscription();
+
+      // Then setup topic subscriptions (excluding nav_graphs/buildingMap)
       await this.setupFleetStateSubscription();
       await this.setupDoorStateSubscription();
       await this.setupLiftStateSubscription();
       // Setup dynamic event subscription to capture dynamic_event_seq
       await this.setupDynamicEventSubscription();
-      
-      // Building map service request removed - using nav_graphs topic only
-      console.log('RMF: Building map service request removed - using nav_graphs topic');
-      
-      console.log('RMF: All RMF subscriptions setup successfully');
-      
+
+      // Always use service for building map/locations
+      console.log('RMF: Requesting building map from service (topic subscription removed)...');
+      await this.requestBuildingMapFromService();
+
+      console.log('RMF: All RMF subscriptions setup successfully (using service for building map)');
+
     } catch (error) {
       console.error('RMF: Failed to setup subscriptions:', error.message);
     }
@@ -78,8 +78,15 @@ class RMFSubscriptions {
     try {
       console.log('RMF: Setting up service clients...');
       
-      // Building map service client completely removed - using nav_graphs topic instead
-      console.log('RMF: Building map service client removed - using nav_graphs topic');
+      // Setup building map service client
+      const rclnodejs = require('rclnodejs');
+      
+      this.serviceClients.buildingMap = this.rosNode.createClient(
+        'rmf_building_map_msgs/srv/GetBuildingMap',
+        '/get_building_map'
+      );
+      
+      console.log('RMF: Building map service client created');
       
     } catch (error) {
       console.error('RMF: Failed to create service clients:', error.message);
@@ -87,45 +94,33 @@ class RMFSubscriptions {
   }
 
   async requestBuildingMapFromService() {
-    console.log('RMF: Building map service request removed - using nav_graphs topic');
-    return false;
-  }
-
-  async setupBuildingMapSubscription() {
     try {
-      console.log('RMF: Setting up nav_graphs subscription...');
-      
-      // Try with increased depth - QoS settings for nav_graphs
-      const qosProfile = {
-        reliability: 'reliable',
-        durability: 'transient_local',
-        liveliness: 'automatic',
-        history: 'keep_last',
-        depth: 10  // Increased depth to ensure we get the latched message
-      };
-      
-      console.log('RMF: Using QoS with depth:', qosProfile.depth);
-      
-      const subscription = this.rosNode.createSubscription(
-        'rmf_building_map_msgs/msg/Graph',
-        '/nav_graphs',
-        (msg) => {
-          console.log('RMF: RECEIVED nav_graphs message!');
-          console.log('RMF: Nav graphs message keys:', Object.keys(msg));
-          console.log('RMF: Graph name:', msg.name);
-          console.log('RMF: Vertices count:', msg.vertices ? msg.vertices.length : 0);
-          this.throttledProcess('buildingMap', msg, processBuildingMapData);
-        },
-        qosProfile
+      console.log('RMF: Requesting building map from service using SafeServiceClient...');
+      const { SafeServiceClient } = require('./rmf-safe-service-client');
+      const serviceClient = new SafeServiceClient(
+        'rmf_building_map_msgs/srv/GetBuildingMap',
+        '/get_building_map'
       );
-      
-      this.subscribers.buildingMap = subscription;
-      console.log('RMF: Nav graphs subscription created with QoS settings');
-      
+      const response = await serviceClient.callService({});
+      if (response && response.building_map) {
+        console.log('RMF: Building map received from service');
+        console.log(`RMF: Building: ${response.building_map.name}`);
+        console.log(`RMF: Levels: ${response.building_map.levels.length}`);
+        // Process the building map data
+        const { processBuildingMapFromService } = require('./rmfDataProcessors');
+        processBuildingMapFromService(response.building_map, this.context, this.updateCallback);
+        return true;
+      } else {
+        console.error('RMF: Invalid response from building map service');
+        return false;
+      }
     } catch (error) {
-      console.error('RMF: Failed to create nav_graphs subscription:', error.message);
+      console.error('RMF: Failed to request building map from service:', error.message);
+      return false;
     }
   }
+
+  // setupBuildingMapSubscription removed: always use service for building map/locations
 
   async setupFleetStateSubscription() {
     try {

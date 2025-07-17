@@ -1,4 +1,4 @@
-// File: nodes/lib/safeServiceClient.js
+// File: nodes/lib/rmf-safe-service-client.js
 const { Ros2Instance } = require('./rmf-ros2-instance');
 
 /**
@@ -34,14 +34,15 @@ class SafeServiceClient {
       console.log(`RMF: Service ${this.serviceName} is available, making request...`);
       
       // Create a promise to handle the callback-based service call
+      const serviceName = this.serviceName;
       const servicePromise = new Promise((resolve, reject) => {
         try {
           client.sendRequest(request, function(response) {
-            console.log(`RMF: Service ${this.serviceName} callback received response`);
+            console.log(`RMF: Service ${serviceName} callback received response`);
             resolve(response);
           });
         } catch (error) {
-          console.error(`RMF: Failed to send request to ${this.serviceName}:`, error.message);
+          console.error(`RMF: Failed to send request to ${serviceName}:`, error.message);
           reject(error);
         }
       });

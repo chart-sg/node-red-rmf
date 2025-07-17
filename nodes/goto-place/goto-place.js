@@ -18,31 +18,33 @@ module.exports = function (RED) {
     // Get reference to rmf-config
     node.configNode = RED.nodes.getNode(config.config);
     
-    // Check initial RMF data availability
-    const checkRMFData = () => {
+
+    // Robust RMF socket connection status handling
+    let lastSocketConnected = false;
+    function updateRMFStatus() {
       try {
-        // Use the same logic as the input handler
-        let rmfData = rmfContextManager.getRMFData();
-        
-        // If no data available, try to force refresh
-        if (!rmfData || (rmfData.robots.length === 0 && rmfData.locations.length === 0)) {
-          rmfContextManager.forceProcessAllLatest();
-          rmfData = rmfContextManager.getRMFData();
-        }
-        
-        if (!rmfData || (rmfData.robots.length === 0 && rmfData.locations.length === 0)) {
-          node.status({ fill: 'yellow', shape: 'ring', text: 'RMF data not available' });
+        const socket = rmfContextManager.context && rmfContextManager.context.socket;
+        if (!socket || !socket.connected) {
+          node.status({ fill: 'yellow', shape: 'ring', text: 'Waiting for RMF connection...' });
+          lastSocketConnected = false;
         } else {
-          node.status({ fill: 'green', shape: 'dot', text: `${rmfData.robots.length} robots, ${rmfData.locations.length} locations` });
+          // Show RMF data status if available
+          let rmfData = rmfContextManager.getRMFData();
+          if (!rmfData || (rmfData.robots.length === 0 && rmfData.locations.length === 0)) {
+            node.status({ fill: 'yellow', shape: 'dot', text: 'RMF connected, no data' });
+          } else {
+            node.status({ fill: 'green', shape: 'dot', text: `${rmfData.robots.length} robots, ${rmfData.locations.length} locations` });
+          }
+          lastSocketConnected = true;
         }
       } catch (error) {
         node.status({ fill: 'red', shape: 'ring', text: 'RMF context error' });
       }
-    };
-    
-    // Check data availability on startup and periodically
-    checkRMFData();
-    const statusInterval = setInterval(checkRMFData, 5000);
+    }
+
+    // Poll for RMF connection status every 2s
+    updateRMFStatus();
+    const statusInterval = setInterval(updateRMFStatus, 2000);
     
     // Clear interval on close and implement proper shutdown
     node.on('close', async (removed, done) => {
@@ -82,9 +84,17 @@ module.exports = function (RED) {
 
     node.on('input', async (msg, send, done) => {
       try {
-        // Initialize flow-level rmf_data for this goto-place execution
+        // Robust: If RMF socket is not connected, set waiting status and return without error
+        if (!rmfContextManager.context.socket || !rmfContextManager.context.socket.connected) {
+          node.status({ fill: 'yellow', shape: 'ring', text: 'Waiting for RMF connection...' });
+          msg.payload = { status: 'waiting', reason: 'RMF socket not connected yet' };
+          send(msg);
+          return done();
+        }
+
+        // Always define flowContext before use
         const flowContext = node.context().flow;
-        
+
         // Get all configuration values (from node config or message)
         const robotName = node.robot_name || msg.robot_name;
         const robotFleet = node.robot_fleet || msg.robot_fleet;
@@ -95,7 +105,7 @@ module.exports = function (RED) {
                                (msg.stubborn_period !== undefined ? msg.stubborn_period : 0);
         const parallelBehaviour = node.parallel_behaviour || msg.parallel_behaviour || 'abort';
         const lastEvent = node.last_event !== undefined ? node.last_event : (msg.last_event !== undefined ? msg.last_event : true);
-        
+
         // Validate estimate is valid JSON
         if (typeof estimate === 'string') {
           try {
@@ -105,7 +115,7 @@ module.exports = function (RED) {
             return done();
           }
         }
-        
+
         // Step 1: Input Validation
         const validationResult = await validateInputs(robotName, robotFleet, locationName, zoneType, estimate, stubbornPeriod, parallelBehaviour, lastEvent);
         if (!validationResult.valid) {
@@ -113,9 +123,9 @@ module.exports = function (RED) {
           node.status({ fill: 'red', shape: 'ring', text: validationResult.error });
           return done();
         }
-        
+
         const { validatedRobot, validatedFleet, validatedLocation } = validationResult;
-        
+
         // Initialize flow rmf_data
         const rmfData = {
           robot_name: validatedRobot ? (validatedRobot.name || validatedRobot.robot_name) : robotName,
@@ -132,10 +142,10 @@ module.exports = function (RED) {
           battery_percent: validatedRobot ? (validatedRobot.battery_percent || 0) : 0,
           dynamic_event_seq: validatedRobot ? (validatedRobot.dynamic_event_seq || null) : null
         };
-        
+
         flowContext.set('rmf_data', rmfData);
         node.status({ fill: 'blue', shape: 'dot', text: 'Processing...' });
-        
+
         // Step 2: Check if robot already has a task_id
         if (validatedRobot.task_id) {
           node.log(`Robot ${robotName} already has task_id: ${validatedRobot.task_id}`);
@@ -540,17 +550,7 @@ module.exports = function (RED) {
       }
     }
 
-    // Send dynamic event goal using the new callback approach
-    async function sendDynamicEventGoalWithCallback(rmfData, callbacks) {
-      try {
-        return await rmfContextManager.sendDynamicEventGoalWithCallback(rmfData, callbacks);
-      } catch (error) {
-        return {
-          success: false,
-          error: error.message
-        };
-      }
-    }
+    // (Legacy sendDynamicEventGoalWithCallback removed; only robust sendDynamicEventGoal is used)
   }
 
   RED.nodes.registerType('goto-place', GoToPlaceNode);

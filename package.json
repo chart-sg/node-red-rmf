@@ -19,6 +19,7 @@
   "node-red": {
     "version": ">=1.3.0",
     "nodes": {
+      "test-node": "nodes/test-node.js",
       "rmf-config": "nodes/rmf-config/rmf-config.js",
       "goto-place": "nodes/goto-place/goto-place.js",
       "goto-place-edu": "nodes/goto-place/goto-place-edu-pattern.js"
