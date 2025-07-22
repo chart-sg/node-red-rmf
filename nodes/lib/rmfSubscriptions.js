@@ -265,8 +265,13 @@ class RMFSubscriptions {
           dynamic_event_status: 'active'
         };
         
-        console.log(`RMF: Updated robot ${robot} (${fleet}) with dynamic_event_seq: ${dynamic_event_seq}`);
-        
+        console.log(`[RMF][DEBUG] Updated robot ${robot} (${fleet}) with dynamic_event_seq: ${dynamic_event_seq}, status: active, description: ${JSON.stringify(description)}, start_time: ${startTimeMs}`);
+        // Enhanced: Log full robot context after update
+        try {
+          console.log('[RMF][DEBUG] Robot context after update:', JSON.stringify(this.context.robots[robotIndex], null, 2));
+        } catch (logErr) {
+          console.log('[RMF][DEBUG] Robot context after update: [unserializable]');
+        }
         // Increment processed counter
         this.processedCounters.dynamicEvent++;
         
@@ -279,14 +284,14 @@ class RMFSubscriptions {
           dynamic_event_start_time: startTimeMs,
           dynamic_event_status: 'active'
         });
-        
+        console.log(`[RMF][DEBUG] Called updateRobotContext for ${robot} (${fleet}) with status: active`);
         // Trigger context update
         if (this.updateCallback) {
+          console.log('[RMF][DEBUG] Triggering updateCallback after dynamic event begin');
           this.updateCallback();
         }
       } else {
-        console.warn(`RMF: Robot ${robot} from fleet ${fleet} not found in context for dynamic event`);
-        
+        console.warn(`[RMF][WARN] Robot ${robot} from fleet ${fleet} not found in context for dynamic event`);
         // If robot not found, create a basic robot entry with dynamic event info
         this.context.robots.push({
           name: robot,
@@ -299,20 +304,33 @@ class RMFSubscriptions {
           battery: { charge: 0 },
           status: 'unknown'
         });
-        
-        console.log(`RMF: Created new robot entry for ${robot} (${fleet}) with dynamic_event_seq: ${dynamic_event_seq}`);
-        
+        console.log(`[RMF][DEBUG] Created new robot entry for ${robot} (${fleet}) with dynamic_event_seq: ${dynamic_event_seq}, status: active`);
+        // Enhanced: Log full robot context after creation
+        try {
+          console.log('[RMF][DEBUG] New robot context:', JSON.stringify(this.context.robots[this.context.robots.length - 1], null, 2));
+        } catch (logErr) {
+          console.log('[RMF][DEBUG] New robot context: [unserializable]');
+        }
         // Increment processed counter
         this.processedCounters.dynamicEvent++;
-        
         // Trigger context update
         if (this.updateCallback) {
+          console.log('[RMF][DEBUG] Triggering updateCallback after new robot entry');
           this.updateCallback();
         }
       }
       
     } catch (error) {
-      console.error('RMF: Failed to process dynamic event begin:', error.message);
+      console.error('[RMF][ERROR] Failed to process dynamic event begin:', error.message);
+    }
+  }
+
+  // Helper to log when status is set to 'underway' (or any status)
+  logDynamicEventStatusUpdate(robotName, fleetName, status) {
+    if (status === 'underway') {
+      console.log(`[RMF][DEBUG] Dynamic event status for ${robotName} (${fleetName}) set to 'underway'`);
+    } else {
+      console.log(`[RMF][DEBUG] Dynamic event status for ${robotName} (${fleetName}) set to '${status}'`);
     }
   }
 

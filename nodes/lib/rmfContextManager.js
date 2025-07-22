@@ -1,11 +1,15 @@
 // File: nodes/lib/rmfContextManager.js
 const rclnodejs = require('rclnodejs');
 const io = require('socket.io-client');
+const EventEmitter = require('events');
 const RMFRosInitializer = require('./rmfRosInitializer');
 const RMFSubscriptions = require('./rmfSubscriptions');
 const { RMF_Ros2Instance } = require('./rmf-ros2-instance');
 const { RMF_ActionClient } = require('./rmf-action-client');
 const { SafeServiceClient } = require('./rmf-safe-service-client');
+
+// Event emitter for RMF context events
+const rmfEvents = new EventEmitter();
 
 // Global ROS state - shared across all nodes
 let globalRosState = {
@@ -67,33 +71,26 @@ let subscriptionsManager = null;
 async function initROS2() {
   try {
     console.log('RMF: Initializing ROS2 with edu-pattern...');
-    
     // Use the edu-pattern singleton ROS2 node
     const { Ros2Instance } = require('./rmf-ros2-instance');
     const ros2Instance = Ros2Instance.instance();
-    
     // Use the edu-pattern node for context
     context.node = ros2Instance.node;
     context.rosInitialized = true;
     globalRosState.isInitialized = true;
-    
     console.log('RMF: Using edu-pattern ROS2 node for subscriptions');
-    
     // If ROS initialized successfully, setup subscriptions
     if (context.rosInitialized && context.node) {
       // Initialize subscriptions manager
       if (!subscriptionsManager) {
         subscriptionsManager = new RMFSubscriptions(context.node, context, updateGlobalContext);
       }
-
       // Setup all RMF subscriptions
       await subscriptionsManager.setupAllSubscriptions();
-
       // Optionally disable high-frequency logging to reduce console spam
       if (process.env.RMF_QUIET_LOGGING === 'true') {
         subscriptionsManager.disableHighFrequencyLogging();
       }
-
       // Defensive: Only get subscribers if method exists and not null
       if (subscriptionsManager && typeof subscriptionsManager.getSubscribers === 'function') {
         const subs = subscriptionsManager.getSubscribers();
@@ -105,7 +102,6 @@ async function initROS2() {
       } else {
         context.subscribers = {};
       }
-
       // Fetch building map from service and update context
       if (subscriptionsManager && typeof subscriptionsManager.requestBuildingMapFromService === 'function') {
         const success = await subscriptionsManager.requestBuildingMapFromService();
@@ -116,9 +112,11 @@ async function initROS2() {
         console.warn('RMF: subscriptionsManager is null or does not have requestBuildingMapFromService after deploy. Skipping building map request.');
       }
     }
-    
+    // Emit ready event after successful ROS2 and subscriptions init
+    rmfEvents.emit('ready');
   } catch (error) {
     console.error('RMF: Failed to initialize ROS 2 and subscriptions:', error.message);
+    rmfEvents.emit('error', error);
     throw error;
   }
 }
@@ -128,34 +126,33 @@ function connectSocket({ host, port, jwt }) {
     // Ensure we're using HTTP (not HTTPS) for the RMF API server
     const connectionUrl = `http://${host.replace(/^https?:\/\//, '')}:${port}`;
     console.log(`RMF: Attempting to connect to ${connectionUrl}...`);
-    
     const socket = io(connectionUrl, {
-      auth: { token: jwt }, // v4.x uses auth instead of query
-      transports: ['websocket', 'polling'], // Try websocket first, fallback to polling
-      timeout: 10000, // 10 second timeout
+      auth: { token: jwt },
+      transports: ['websocket', 'polling'],
+      timeout: 10000,
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: 5,
       forceNew: true
     });
-
     socket.on('connect', () => {
       console.log(`RMF: Successfully connected to ${connectionUrl}`);
       context.socket = socket;
+      rmfEvents.emit('socket_connected', socket);
       resolve(socket);
     });
-
     socket.on('connect_error', (error) => {
       console.error(`RMF: Connection error to ${connectionUrl}:`, error);
+      rmfEvents.emit('socket_error', error);
       reject(new Error(`Socket connection failed: ${error.message || error}`));
     });
-
     socket.on('disconnect', (reason) => {
       console.log(`RMF: Disconnected from ${connectionUrl}. Reason: ${reason}`);
+      rmfEvents.emit('socket_disconnected', reason);
     });
-
     socket.on('error', (error) => {
       console.error(`RMF: Socket error:`, error);
+      rmfEvents.emit('socket_error', error);
     });
   });
 }
@@ -174,16 +171,14 @@ function updateGlobalContext() {
 
 async function cleanup() {
   console.log('Cleaning up RMF context...');
-
-  // Clean up persistent action client first (idempotent)
   try {
+    // Clean up persistent action client first (idempotent)
     if (typeof cleanupPersistentActionClient === 'function') {
       cleanupPersistentActionClient();
     }
   } catch (error) {
     console.warn('Error during persistent action client cleanup:', error);
   }
-
   // Clean up subscriptions first (idempotent)
   if (subscriptionsManager) {
     try {
@@ -197,7 +192,6 @@ async function cleanup() {
       console.error('RMF subscription cleanup failed:', error);
     }
   }
-
   // Clean up ROS resources using the new singleton pattern (idempotent)
   try {
     console.log('Implementing proper ROS2 shutdown sequence (singleton pattern)...');
@@ -211,19 +205,15 @@ async function cleanup() {
   } catch (error) {
     console.error('RMF: Error during singleton ROS2 cleanup:', error.message);
   }
-
   // Clean up legacy ROS resources if they exist (idempotent)
   if (context.node) {
     try {
       console.log('Cleaning up legacy ROS2 resources...');
-      // Step 1: Stop spinning first (if applicable)
       if (context.node.spinning && typeof context.node.stop === 'function') {
         console.log('Stopping legacy ROS2 node spin...');
         try { context.node.stop(); } catch (e) { /* ignore */ }
       }
-      // Step 2: Destroy all entities in proper order
       console.log('Destroying legacy ROS2 entities...');
-      // Destroy any remaining subscriptions
       if (context.subscribers) {
         Object.values(context.subscribers).forEach(sub => {
           if (sub && typeof sub.destroy === 'function' && (!sub.isDestroyed || !sub.isDestroyed())) {
@@ -232,13 +222,11 @@ async function cleanup() {
         });
         context.subscribers = {};
       }
-      // Step 3: Destroy the node
       if (typeof context.node.destroy === 'function') {
         console.log('Destroying legacy ROS2 node...');
         try { context.node.destroy(); } catch (e) { /* ignore */ }
       }
       context.node = null;
-      // Step 4: Shutdown rclnodejs context (only if singleton didn't already do it)
       if (context.rosInitialized) {
         try {
           console.log('Shutting down legacy rclnodejs...');
@@ -249,7 +237,6 @@ async function cleanup() {
         }
         context.rosInitialized = false;
       }
-      // Step 5: Reset global state
       globalRosState.isInitialized = false;
       globalRosState.isInitializing = false;
       globalRosState.initPromise = null;
@@ -258,8 +245,6 @@ async function cleanup() {
       console.error('Error during ROS2 cleanup:', error.message);
     }
   }
-
-  // Clean up ROS initializer (idempotent)
   if (rosInitializer) {
     try {
       console.log('Cleaning up ROS initializer...');
@@ -272,8 +257,6 @@ async function cleanup() {
       console.error('ROS initializer cleanup failed:', error);
     }
   }
-
-  // Clean up socket (idempotent)
   if (context.socket) {
     try {
       console.log('Disconnecting socket...');
@@ -282,12 +265,11 @@ async function cleanup() {
       }
       context.socket = null;
       console.log('Socket cleanup completed');
+      rmfEvents.emit('socket_disconnected', 'cleanup');
     } catch (error) {
       console.error('Socket cleanup failed:', error);
     }
   }
-
-  // Clear RMF data (idempotent)
   context.robots = [];
   context.locations = [];
   context.doors = [];
@@ -304,8 +286,8 @@ async function cleanup() {
     doors: null,
     lifts: null
   };
-
   console.log('RMF context cleanup completed');
+  rmfEvents.emit('cleanedUp');
 }
 
 // Add a function to get global ROS state for debugging
@@ -720,9 +702,62 @@ async function unsubscribeFromTaskStatus(taskId) {
 
 
 // Unified sendDynamicEventGoal: edu-pattern only
+/**
+ * Send a cancel or end event for a dynamic event.
+ * @param {'cancel'|'end'} type - Type of event to send ('cancel' or 'end')
+ * @param {Object} robot - Robot context object (must have robot_name, robot_fleet, dynamic_event_seq, dynamic_event_id)
+ * @param {Object} [options] - Optional callbacks for feedback/complete
+ * @returns {Promise<Object>} Result from action client
+ */
+async function sendDynamicEventControl(type, robot, options = {}) {
+  console.log(`[RMF][DEBUG] sendDynamicEventControl called with type: ${type}, robot:`, robot);
+  
+  if (!robot || !robot.robot_name || !robot.robot_fleet || !robot.dynamic_event_seq) {
+    throw new Error('Robot context must include robot_name, robot_fleet, and dynamic_event_seq');
+  }
+  let goal = {
+    robot_name: robot.robot_name,
+    robot_fleet: robot.robot_fleet,
+    dynamic_event_seq: robot.dynamic_event_seq
+  };
+  
+  if (type === 'cancel') {
+    if (robot.dynamic_event_id === undefined) {
+      throw new Error('Robot context must include dynamic_event_id for cancel event');
+    }
+    goal.event_type = 2;
+    // Ensure id is BigInt for ROS2 compatibility
+    goal.id = typeof robot.dynamic_event_id === 'bigint' ? robot.dynamic_event_id : BigInt(robot.dynamic_event_id);
+    console.log(`[RMF][DEBUG] Cancel goal - dynamic_event_id type: ${typeof robot.dynamic_event_id}, value: ${robot.dynamic_event_id}, goal.id: ${goal.id}`);
+  } else if (type === 'end') {
+    goal.event_type = 3;
+  } else {
+    throw new Error('Invalid type for sendDynamicEventControl: ' + type);
+  }
+  
+  console.log(`[RMF][DEBUG] Final cancel goal being sent:`, goal);
+  return await sendDynamicEventGoal(goal, options);
+}
+// Global state to track active end events to prevent duplicates
+let activeEndEvents = new Set();
+
 async function sendDynamicEventGoal(goalData, callbacks = {}) {
   let safeActionClient = null;
   try {
+    // For end events, check if there's already an active end event for this robot
+    if (goalData.event_type === 3) { // end event
+      const robotKey = `${goalData.robot_fleet}/${goalData.robot_name}`;
+      if (activeEndEvents.has(robotKey)) {
+        console.log(`RMF: End event already in progress for robot ${robotKey}, skipping duplicate`);
+        return {
+          success: false,
+          error: 'End event already in progress for this robot'
+        };
+      }
+      // Mark this robot as having an active end event
+      activeEndEvents.add(robotKey);
+      console.log(`RMF: Marked ${robotKey} as having active end event`);
+    }
     console.log('RMF: Using safe action client wrapper...');
     const { Ros2Instance } = require('./rmf-ros2-instance');
     const { SafeActionClient } = require('./rmf-safe-action-client');
@@ -764,39 +799,101 @@ async function sendDynamicEventGoal(goalData, callbacks = {}) {
       dynamic_event_seq: dynamicEventSeq,
       stubborn_period: goalData.stubborn_period || 0.0
     };
+    
+    // Include id field for cancel operations
+    if (goalData.id !== undefined) {
+      goal.id = goalData.id;
+      console.log(`[RMF][DEBUG] Including id field in goal: ${goal.id}`);
+    }
+    
     console.log('RMF: Sending goal (safe wrapper):', goal);
     const goalHandle = await safeActionClient.sendGoal(goal, function (feedback) {
       console.log('RMF: Feedback received:', feedback);
+      // Update robot context with dynamic_event_status and dynamic_event_id if present in feedback
+      if (feedback && goalData.robot_name && goalData.robot_fleet) {
+        const updates = { dynamic_event_status: feedback.status };
+        if (feedback.id !== undefined) {
+          try {
+            updates.dynamic_event_id = BigInt(feedback.id.toString());
+          } catch (e) {
+            console.warn(`[RMF][WARN] Could not convert feedback.id to BigInt: ${feedback.id}`);
+          }
+        }
+        if (feedback.dynamic_event_id !== undefined) {
+          try {
+            updates.dynamic_event_id = BigInt(feedback.dynamic_event_id.toString());
+          } catch (e) {
+            console.warn(`[RMF][WARN] Could not convert feedback.dynamic_event_id to BigInt: ${feedback.dynamic_event_id}`);
+          }
+        }
+        updateRobotContext(goalData.robot_name, goalData.robot_fleet, updates);
+      }
       if (callbacks.onFeedback) {
         callbacks.onFeedback(feedback);
       }
     });
+    
+    // Check if goal was accepted immediately after sending
     if (!goalHandle.isAccepted()) {
       console.log('RMF: Goal was rejected');
-      const result = await goalHandle.getResult();
       safeActionClient.destroy();
       safeActionClient = null;
+      
+      // For end events, remove from active tracking on rejection
+      if (goalData.event_type === 3) {
+        const robotKey = `${goalData.robot_fleet}/${goalData.robot_name}`;
+        activeEndEvents.delete(robotKey);
+        console.log(`RMF: Removed ${robotKey} from active end events tracking (goal rejected)`);
+      }
+      
       return {
         success: false,
         error: 'Goal rejected',
-        result: result
+        result: null
       };
     }
+    
     console.log('RMF: Goal was accepted');
+    
+    // Wait for the result
     const result = await goalHandle.getResult();
     let success = false;
+    let status = 'unknown';
+    
     if (goalHandle.isSucceeded()) {
       console.log('RMF: Goal succeeded!');
       success = true;
+      status = 'succeeded';
+    } else if (goalHandle.isCanceled()) {
+      console.log('RMF: Goal was canceled');
+      success = true; // Consider canceled as successful completion
+      status = 'canceled';
+    } else if (goalHandle.isAborted()) {
+      console.log('RMF: Goal was aborted');
+      success = true; // Consider aborted (due to cancel) as successful completion
+      status = 'aborted';
     } else {
-      console.log('RMF: Goal failed');
+      console.log('RMF: Goal failed with unknown status');
+      success = false;
+      status = 'failed';
     }
+    
     safeActionClient.destroy();
     safeActionClient = null;
     console.log('RMF: Safe action client destroyed');
+    
+    // For end events, remove from active tracking
+    if (goalData.event_type === 3) {
+      const robotKey = `${goalData.robot_fleet}/${goalData.robot_name}`;
+      activeEndEvents.delete(robotKey);
+      console.log(`RMF: Removed ${robotKey} from active end events tracking`);
+    }
+    
     return {
       success: success,
-      result: result
+      status: status,
+      result: result,
+      error: success ? undefined : (status === 'aborted' ? 'Goal was aborted by cancel request' : 'Goal failed')
     };
   } catch (error) {
     console.error('RMF: Error in sendDynamicEventGoal:', error.message);
@@ -809,6 +906,14 @@ async function sendDynamicEventGoal(goalData, callbacks = {}) {
         console.warn('RMF: Warning during safe action client cleanup (error):', destroyError.message);
       }
     }
+    
+    // For end events, remove from active tracking on error
+    if (goalData.event_type === 3) {
+      const robotKey = `${goalData.robot_fleet}/${goalData.robot_name}`;
+      activeEndEvents.delete(robotKey);
+      console.log(`RMF: Removed ${robotKey} from active end events tracking (error cleanup)`);
+    }
+    
     return {
       success: false,
       error: error.message
@@ -823,23 +928,40 @@ function updateRobotContext(robotName, fleetName, updates) {
     const robotIndex = context.robots.findIndex(r => 
       r.name === robotName && r.fleet === fleetName
     );
-    
     if (robotIndex !== -1) {
-      context.robots[robotIndex] = {
-        ...context.robots[robotIndex],
+      const currentRobot = context.robots[robotIndex];
+      
+      // Preserve dynamic_event_id if it exists and updates don't include it
+      if (currentRobot.dynamic_event_id !== undefined && updates.dynamic_event_id === undefined) {
+        console.log(`[RMF][DEBUG] Preserving existing dynamic_event_id: ${currentRobot.dynamic_event_id} for robot ${robotName}`);
+        updates.dynamic_event_id = currentRobot.dynamic_event_id;
+      }
+      
+      // Log full merged update for debugging
+      const mergedUpdate = {
+        ...currentRobot,
         ...updates
       };
+      
+      context.robots[robotIndex] = mergedUpdate;
       
       // Trigger context update
       updateGlobalContext();
       
+      // Log status update if present
+      if (updates.dynamic_event_status !== undefined) {
+        if (subscriptionsManager && typeof subscriptionsManager.logDynamicEventStatusUpdate === 'function') {
+          subscriptionsManager.logDynamicEventStatusUpdate(robotName, fleetName, updates.dynamic_event_status);
+        }
+      }
+      
+      console.log(`[RMF][DEBUG] Robot context after update:`, mergedUpdate);
       console.log(`RMF: Updated robot ${robotName} (${fleetName}) context:`, updates);
       return { success: true };
     } else {
       console.warn(`RMF: Robot ${robotName} from fleet ${fleetName} not found in context`);
       return { success: false, error: 'Robot not found' };
     }
-    
   } catch (error) {
     console.error('RMF: Failed to update robot context:', error.message);
     return { success: false, error: error.message };
@@ -865,6 +987,12 @@ function getRobotContext(robotName, fleetName) {
     console.error('RMF: Failed to get robot context:', error.message);
     return null;
   }
+}
+
+// Clear active end events tracking (for cleanup or reset)
+function clearActiveEndEvents() {
+  activeEndEvents.clear();
+  console.log('RMF: Cleared all active end events tracking');
 }
 
 // External initialization function for testing
@@ -928,7 +1056,10 @@ module.exports = {
   subscribeToTaskStatus,
   unsubscribeFromTaskStatus,
   sendDynamicEventGoal,
+  sendDynamicEventControl,
   updateRobotContext,
   getRobotContext,
-  debugROS2Node
+  clearActiveEndEvents,
+  debugROS2Node,
+  rmfEvents // Export the event emitter
 };

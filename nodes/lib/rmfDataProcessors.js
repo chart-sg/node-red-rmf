@@ -122,7 +122,8 @@ function processFleetStateData(msg, context, updateCallback) {
             dynamic_event_seq: existingRobot.dynamic_event_seq,
             dynamic_event_description: existingRobot.dynamic_event_description,
             dynamic_event_start_time: existingRobot.dynamic_event_start_time,
-            dynamic_event_status: existingRobot.dynamic_event_status
+            dynamic_event_status: existingRobot.dynamic_event_status,
+            dynamic_event_id: existingRobot.dynamic_event_id  // Preserve the BigInt dynamic_event_id
           })
         });
       });

@@ -22,7 +22,9 @@
       "test-node": "nodes/test-node.js",
       "rmf-config": "nodes/rmf-config/rmf-config.js",
       "goto-place": "nodes/goto-place/goto-place.js",
-      "goto-place-edu": "nodes/goto-place/goto-place-edu-pattern.js"
+      "goto-place-edu": "nodes/goto-place/goto-place-edu-pattern.js",
+      "cancel-task": "nodes/cancel-task/cancel-task.js",
+      "end-task": "nodes/end-task/end-task.js"
     }
   },
   "scripts": {

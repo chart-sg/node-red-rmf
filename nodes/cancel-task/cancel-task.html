@@ -1,25 +1,18 @@
 <script type="text/javascript">
-  RED.nodes.registerType('goto-place', {
+  RED.nodes.registerType('cancel-task', {
     category: 'RMF',
-    color: '#f7c74f',
+    color: '#ff6b6b',
     defaults: {
       name: { value: '' },
       config: { type: 'rmf-config', required: true },
       robot_name: { value: '' },
-      robot_fleet: { value: '' },
-      location_level: { value: '' },
-      location_name: { value: '' },
-      zone_type: { value: 'none' },
-      estimate: { value: '{}' },
-      stubborn_period: { value: 0 },
-      parallel_behaviour: { value: 'abort' },
-      last_event: { value: false }
+      robot_fleet: { value: '' }
     },
     inputs: 1,
     outputs: 1,
-    icon: 'font-awesome/fa-location-arrow',
+    icon: 'font-awesome/fa-times-circle',
     label: function () {
-      return this.name || 'goto-place';
+      return this.name || 'cancel-task';
     },
     oneditprepare: function() {
       const node = this;
@@ -27,7 +20,6 @@
       // Initialize data storage
       node.rmfData = {
         robots: [],
-        locations: [],
         fleets: []
       };
       
@@ -71,18 +63,18 @@
           } else if (data.status === 'error') {
             console.error('Error loading RMF data:', data.message);
             showDataStatus('Error loading RMF data: ' + data.message, 'error');
-          } else if (data.robots.length === 0 && data.locations.length === 0) {
-            console.warn('No RMF data available - dropdowns will be empty');
-            showDataStatus('No RMF data available. Check RMF system status.', 'warning');
+          } else if (data.robots.length === 0) {
+            console.warn('No RMF robots available - dropdowns will be empty');
+            showDataStatus('No RMF robots available. Check RMF system status.', 'warning');
           } else {
-            showDataStatus(`Loaded ${data.robots.length} robots, ${data.locations.length} locations`, 'success');
+            showDataStatus(`Loaded ${data.robots.length} robots from ${data.fleets.length} fleets`, 'success');
           }
           
           populateDropdowns();
         }).fail(function(xhr, status, error) {
           console.error('Failed to load RMF data:', error);
           showDataStatus('Failed to connect to RMF data source', 'error');
-          node.rmfData = { robots: [], locations: [], fleets: [] };
+          node.rmfData = { robots: [], fleets: [] };
           populateDropdowns();
         });
       }
@@ -143,58 +135,9 @@
           });
         }
         
-        // Populate level dropdown with unique levels from named locations
-        const levelSelect = $('#node-input-location_level');
-        levelSelect.empty();
-        levelSelect.append('<option value="">-- All Levels --</option>');
-        
-        if (node.rmfData.locations && node.rmfData.locations.length > 0) {
-          // Filter to only named locations and get unique levels
-          const namedLocations = node.rmfData.locations.filter(location => location.name && location.name.trim() !== '');
-          const uniqueLevels = [...new Set(namedLocations.map(location => location.level))].sort();
-          
-          uniqueLevels.forEach(level => {
-            levelSelect.append(`<option value="${level}">${level}</option>`);
-          });
-        }
-        
-        // Populate location dropdown with filtered locations
-        populateLocationDropdown();
-        
         // Set current values
         robotSelect.val(node.robot_name || '');
         fleetSelect.val(node.robot_fleet || '');
-        levelSelect.val(node.location_level || '');
-      }
-      
-      function populateLocationDropdown() {
-        const locationSelect = $('#node-input-location_name');
-        const selectedLevel = $('#node-input-location_level').val();
-        
-        locationSelect.empty();
-        locationSelect.append('<option value="">Use msg.location_name</option>');
-        
-        if (node.rmfData.locations && node.rmfData.locations.length > 0) {
-          // Filter to only named locations
-          let filteredLocations = node.rmfData.locations.filter(location => 
-            location.name && location.name.trim() !== ''
-          );
-          
-          // Further filter by level if a specific level is selected
-          if (selectedLevel && selectedLevel !== '') {
-            filteredLocations = filteredLocations.filter(location => location.level === selectedLevel);
-          }
-          
-          // Sort locations by name
-          filteredLocations.sort((a, b) => a.name.localeCompare(b.name));
-          
-          filteredLocations.forEach(location => {
-            locationSelect.append(`<option value="${location.name}">${location.name}</option>`);
-          });
-        }
-        
-        // Restore location selection if it's still valid
-        locationSelect.val(node.location_name || '');
       }
       
       function setupChangeHandlers() {
@@ -256,32 +199,24 @@
             robotSelect.val(currentRobot);
           }
         });
-        
-        // Level selection change handler
-        $('#node-input-location_level').on('change', function() {
-          // Re-populate location dropdown when level changes
-          populateLocationDropdown();
-        });
       }
     },
     oneditsave: function() {
       // Validation
-      const locationValue = $('#node-input-location_name').val();
+      const robotName = $('#node-input-robot_name').val();
+      const robotFleet = $('#node-input-robot_fleet').val();
       
-      if (!locationValue) {
-        RED.notify('Location is required (select a location or use "Use msg.location_name")', 'error');
+      if (!robotName && !robotFleet) {
+        RED.notify('Either robot name or robot fleet must be specified (or use message properties)', 'error');
         return false;
       }
-      
-      // Explicitly handle checkbox to ensure proper boolean value is saved
-      this.last_event = $('#node-input-last_event').prop('checked');
       
       return true;
     }
   });
 </script>
 
-<script type="text/html" data-template-name="goto-place">
+<script type="text/html" data-template-name="cancel-task">
   <div class="form-row">
     <label for="node-input-name">Name</label>
     <input type="text" id="node-input-name">
@@ -295,70 +230,17 @@
   </div>
   
   <div class="form-row">
-    <label for="node-input-robot_name">Robot Name</label>
+    <label for="node-input-robot_name">Robot Name <span style="color: red;">*</span></label>
     <select id="node-input-robot_name" style="width: 100%;">
       <option value="">Use msg.robot_name</option>
     </select>
   </div>
   
   <div class="form-row">
-    <label for="node-input-robot_fleet">Robot Fleet</label>
+    <label for="node-input-robot_fleet">Robot Fleet <span style="color: red;">*</span></label>
     <select id="node-input-robot_fleet" style="width: 100%;">
       <option value="">Use msg.robot_fleet</option>
     </select>
-  </div>
-  
-  <div class="form-row">
-    <label for="node-input-location_level">Location Level</label>
-    <select id="node-input-location_level" style="width: 100%;">
-      <option value="">-- All Levels --</option>
-    </select>
-  </div>
-  
-  <div class="form-row">
-    <label for="node-input-location_name">Location Name <span style="color: red;">*</span></label>
-    <select id="node-input-location_name" style="width: 100%;">
-      <option value="">Use msg.location_name</option>
-    </select>
-  </div>
-  
-  <div class="form-row">
-    <label for="node-input-zone_type">Zone Type</label>
-    <select id="node-input-zone_type" style="width: 100%;">
-      <option value="none">None</option>
-      <option value="patient_facing">Patient Facing</option>
-      <option value="bottom">Bottom</option>
-      <option value="center">Center</option>
-      <option value="left">Left</option>
-      <option value="right">Right</option>
-      <option value="top">Top</option>
-    </select>
-  </div>
-  
-  <div class="form-row">
-    <label for="node-input-estimate">Estimate (JSON)</label>
-    <input type="text" id="node-input-estimate" placeholder='{"duration": 300}' style="width: 100%;">
-  </div>
-  
-  <div class="form-row">
-    <label for="node-input-stubborn_period">Stubborn Period (seconds)</label>
-    <input type="number" id="node-input-stubborn_period" min="0" step="0.1" style="width: 100%;">
-  </div>
-  
-  <div class="form-row">
-    <label for="node-input-parallel_behaviour">Parallel Behaviour</label>
-    <select id="node-input-parallel_behaviour" style="width: 100%;">
-      <option value="abort">Abort</option>
-      <option value="overwrite">Overwrite</option>
-      <option value="queue">Queue</option>
-    </select>
-  </div>
-  
-  <div class="form-row">
-    <label for="node-input-last_event">
-      <input type="checkbox" id="node-input-last_event" style="display: inline-block; width: auto; vertical-align: top;">
-      Last Event
-    </label>
   </div>
   
   <div class="form-tips">
@@ -368,30 +250,25 @@
     • Use "Refresh Data" button if dropdowns are empty<br/><br/>
     
     <b>Usage Tips:</b><br/>
-    • Location is required (select from dropdown or use "Use msg.location_name")<br/>
-    • Robot name and fleet are optional but constrained to each other<br/>
+    • Both Robot name and fleet are required<br/>
+    • Robot name and fleet are constrained to each other<br/>
     • If unique robot name is provided, fleet will be auto-selected<br/>
     • Use "Use msg.xxx" dropdown options to pass values via message properties<br/>
-    • Filter locations by level for easier navigation
+    • The node will cancel the currently active dynamic event for the specified robot<br/>
+    • Robot must have an active dynamic event with valid dynamic_event_id
   </div>
 </script>
 
-<script type="text/html" data-help-name="goto-place">
-  <p>Send a robot to a predefined location using RMF. Requires an RMF Config node.</p>
+<script type="text/html" data-help-name="cancel-task">
+  <p>Cancel an active dynamic event task for a specified robot using RMF. Requires an RMF Config node.</p>
   
   <h3>Configuration</h3>
   <dl class="message-properties">
     <dt>Robot Name <span class="property-type">string</span></dt>
-    <dd>The name of the robot to send (optional). Select from dropdown or use "Use msg.robot_name" to pass via message.</dd>
+    <dd>The name of the robot whose task should be canceled (required). Select from dropdown or use "Use msg.robot_name" to pass via message.</dd>
     
     <dt>Robot Fleet <span class="property-type">string</span></dt>
-    <dd>The fleet the robot belongs to (optional). Auto-selected when robot is chosen. Select from dropdown or use "Use msg.robot_fleet" to pass via message.</dd>
-    
-    <dt>Location Level <span class="property-type">string</span></dt>
-    <dd>Filter locations by level (optional). Select "-- All Levels --" to show all locations.</dd>
-    
-    <dt>Location Name <span class="property-type">string</span></dt>
-    <dd>The target location name (required). Select from dropdown or use "Use msg.location_name" to pass via message. Only named waypoints are shown.</dd>
+    <dd>The fleet the robot belongs to (required). Auto-selected when robot is chosen. Select from dropdown or use "Use msg.robot_fleet" to pass via message.</dd>
   </dl>
   
   <h3>Inputs</h3>
@@ -401,25 +278,54 @@
     
     <dt>msg.robot_fleet <span class="property-type">string</span></dt>
     <dd>Robot fleet (used when "Use msg.robot_fleet" is selected)</dd>
-    
-    <dt>msg.location_name <span class="property-type">string</span></dt>
-    <dd>Location name (used when "Use msg.location_name" is selected)</dd>
   </dl>
   
   <h3>Outputs</h3>
   <dl class="message-properties">
     <dt>msg.payload <span class="property-type">object</span></dt>
-    <dd>Contains robot, fleet, location, and config information</dd>
+    <dd>Contains the result of the cancel operation, including robot information and status</dd>
+    
+    <dt>msg.payload.status <span class="property-type">string</span></dt>
+    <dd>Status of the operation: "success", "error", "warning", or "exception"</dd>
+    
+    <dt>msg.payload.robot_name <span class="property-type">string</span></dt>
+    <dd>Name of the robot whose task was canceled</dd>
+    
+    <dt>msg.payload.robot_fleet <span class="property-type">string</span></dt>
+    <dd>Fleet of the robot whose task was canceled</dd>
+    
+    <dt>msg.payload.dynamic_event_seq <span class="property-type">number</span></dt>
+    <dd>Dynamic event sequence number that was canceled (if successful)</dd>
+    
+    <dt>msg.payload.dynamic_event_id <span class="property-type">BigInt</span></dt>
+    <dd>Dynamic event ID that was canceled (if successful)</dd>
   </dl>
   
   <h3>Details</h3>
-  <p>This node provides an interface to send robots to specific locations using RMF. It dynamically loads available robots, fleets, and locations from the global RMF context.</p>
+  <p>This node cancels an active dynamic event task for a specified robot using RMF's dynamic event action server. The node automatically retrieves the necessary information (dynamic_event_seq and dynamic_event_id) from the robot's context.</p>
   
-  <p><strong>Location Filtering:</strong> Only named waypoints are shown in the location dropdown. Use the level dropdown to filter locations by their level/floor.</p>
+  <p><strong>Prerequisites:</strong></p>
+  <ul>
+    <li>The robot must have an active dynamic event task</li>
+    <li>The robot context must contain valid dynamic_event_seq and dynamic_event_id</li>
+    <li>RMF system must be connected and operational</li>
+  </ul>
   
   <p><strong>Robot and Fleet Constraint:</strong> Robot names are tied to specific fleets. When you select a robot, its fleet is automatically selected. When you select a fleet, only robots from that fleet are shown.</p>
   
-  <p><strong>Message Properties:</strong> Select "Use msg.xxx" options in the dropdowns to pass values via message properties instead of using the dropdown values.</p>
+  <p><strong>Error Handling:</strong> The node provides detailed error messages if:</p>
+  <ul>
+    <li>Robot is not found in RMF data</li>
+    <li>Robot has no active dynamic event</li>
+    <li>Robot context is missing required information</li>
+    <li>Cancel operation fails for any reason</li>
+  </ul>
   
-  <p><strong>Validation:</strong> The location field is required - you must either select a location from the dropdown or use "Use msg.location_name". Robot name and fleet are optional but must be consistent with each other if provided.</p>
+  <p><strong>Output Status:</strong></p>
+  <ul>
+    <li><strong>success:</strong> Cancel operation completed successfully</li>
+    <li><strong>warning:</strong> Robot has no active task to cancel</li>
+    <li><strong>error:</strong> Operation failed due to validation or RMF errors</li>
+    <li><strong>exception:</strong> Unexpected error during cancel operation</li>
+  </ul>
 </script>

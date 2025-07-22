@@ -1,0 +1,177 @@
+<script type="text/javascript">
+    RED.nodes.registerType('end-task', {
+        category: 'RMF',
+        color: '#ff6b35',
+        defaults: {
+            name: { value: "" },
+            robot_name: { value: "" },
+            robot_fleet: { value: "" },
+            config: { value: "", type: "rmf-config", required: true }
+        },
+        inputs: 1,
+        outputs: 1,
+        icon: "font-awesome/fa-stop-circle",
+        label: function() {
+            return this.name || "End Task";
+        },
+        labelStyle: function() {
+            return this.name ? "node_label_italic" : "";
+        },
+        oneditprepare: function() {
+            var node = this;
+            
+            // Function to populate robot dropdown
+            function populateRobotDropdown() {
+                var configNodeId = $("#node-input-config").val();
+                if (!configNodeId) return;
+                
+                // Get RMF data from the server
+                $.getJSON('/rmf/data', function(data) {
+                    if (data && data.robots && data.robots.length > 0) {
+                        var robotSelect = $("#node-input-robot_name");
+                        var fleetSelect = $("#node-input-robot_fleet");
+                        
+                        // Clear existing options
+                        robotSelect.empty();
+                        fleetSelect.empty();
+                        
+                        // Add default option
+                        robotSelect.append('<option value="">Select Robot...</option>');
+                        fleetSelect.append('<option value="">Select Fleet...</option>');
+                        
+                        // Populate robots
+                        data.robots.forEach(function(robot) {
+                            robotSelect.append('<option value="' + robot.name + '">' + robot.name + ' (' + robot.fleet + ')</option>');
+                        });
+                        
+                        // Populate fleets (unique)
+                        var fleets = [...new Set(data.robots.map(r => r.fleet))];
+                        fleets.forEach(function(fleet) {
+                            fleetSelect.append('<option value="' + fleet + '">' + fleet + '</option>');
+                        });
+                        
+                        // Set current values
+                        robotSelect.val(node.robot_name);
+                        fleetSelect.val(node.robot_fleet);
+                        
+                        // Update fleet when robot is selected
+                        robotSelect.on('change', function() {
+                            var selectedRobot = data.robots.find(r => r.name === $(this).val());
+                            if (selectedRobot) {
+                                fleetSelect.val(selectedRobot.fleet);
+                            }
+                        });
+                        
+                        // Filter robots when fleet is selected
+                        fleetSelect.on('change', function() {
+                            var selectedFleet = $(this).val();
+                            robotSelect.empty();
+                            robotSelect.append('<option value="">Select Robot...</option>');
+                            
+                            if (selectedFleet) {
+                                var fleetsRobots = data.robots.filter(r => r.fleet === selectedFleet);
+                                fleetsRobots.forEach(function(robot) {
+                                    robotSelect.append('<option value="' + robot.name + '">' + robot.name + '</option>');
+                                });
+                            } else {
+                                data.robots.forEach(function(robot) {
+                                    robotSelect.append('<option value="' + robot.name + '">' + robot.name + ' (' + robot.fleet + ')</option>');
+                                });
+                            }
+                            
+                            robotSelect.val(node.robot_name);
+                        });
+                        
+                    } else {
+                        $("#node-input-robot_name").html('<option value="">No robots available</option>');
+                        $("#node-input-robot_fleet").html('<option value="">No fleets available</option>');
+                    }
+                }).fail(function() {
+                    $("#node-input-robot_name").html('<option value="">Error loading robots</option>');
+                    $("#node-input-robot_fleet").html('<option value="">Error loading fleets</option>');
+                });
+            }
+            
+            // Populate dropdowns when config changes
+            $("#node-input-config").on('change', populateRobotDropdown);
+            
+            // Initial population
+            setTimeout(populateRobotDropdown, 100);
+        }
+    });
+</script>
+
+<script type="text/html" data-template-name="end-task">
+    <div class="form-row">
+        <label for="node-input-config"><i class="fa fa-cog"></i> RMF Config</label>
+        <input type="text" id="node-input-config" placeholder="RMF Configuration">
+    </div>
+    <div class="form-row">
+        <label for="node-input-robot_name"><i class="fa fa-robot"></i> Robot Name</label>
+        <select id="node-input-robot_name" style="width: 70%;">
+            <option value="">Select Robot...</option>
+        </select>
+    </div>
+    <div class="form-row">
+        <label for="node-input-robot_fleet"><i class="fa fa-sitemap"></i> Robot Fleet</label>
+        <select id="node-input-robot_fleet" style="width: 70%;">
+            <option value="">Select Fleet...</option>
+        </select>
+    </div>
+    <div class="form-row">
+        <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
+        <input type="text" id="node-input-name" placeholder="Node Name">
+    </div>
+</script>
+
+<script type="text/html" data-help-name="end-task">
+    <p>Sends an end event to terminate a robot's current dynamic event task.</p>
+    
+    <h3>Inputs</h3>
+    <dl class="message-properties">
+        <dt class="optional">robot_name <span class="property-type">string</span></dt>
+        <dd>Override the configured robot name. The robot that should end its current task.</dd>
+        <dt class="optional">robot_fleet <span class="property-type">string</span></dt>
+        <dd>Override the configured robot fleet. The fleet the robot belongs to.</dd>
+    </dl>
+
+    <h3>Outputs</h3>
+    <dl class="message-properties">
+        <dt>payload <span class="property-type">object</span></dt>
+        <dd>
+            <ul>
+                <li><code>status</code> - "success", "error", "warning", or "exception"</li>
+                <li><code>action</code> - "end"</li>
+                <li><code>robot_name</code> - Name of the robot</li>
+                <li><code>robot_fleet</code> - Fleet of the robot</li>
+                <li><code>dynamic_event_seq</code> - Sequence number of the ended event</li>
+                <li><code>result</code> - Result from the RMF action client</li>
+                <li><code>timestamp</code> - ISO timestamp of when the end was sent</li>
+                <li><code>reason</code> - Error or warning message (if applicable)</li>
+            </ul>
+        </dd>
+    </dl>
+
+    <h3>Details</h3>
+    <p>This node sends an "end" event to RMF to gracefully terminate a robot's current dynamic event task. 
+    Unlike cancel which aborts the task, end allows the task to complete its current operation and then stop.</p>
+    
+    <p>The node requires:</p>
+    <ul>
+        <li>A valid RMF Config node connection</li>
+        <li>Robot name and fleet (configured or via message)</li>
+        <li>The robot must have an active dynamic event (dynamic_event_seq)</li>
+    </ul>
+    
+    <p>Status indicators:</p>
+    <ul>
+        <li><strong>Green</strong>: End event sent successfully</li>
+        <li><strong>Yellow</strong>: Warning (no active task, waiting for connection)</li>
+        <li><strong>Red</strong>: Error or exception occurred</li>
+        <li><strong>Blue</strong>: Processing end request</li>
+    </ul>
+
+    <h3>Example Flow</h3>
+    <p>Typical usage: Connect this node after a goto-place node to cleanly end the task when needed, 
+    or use it as a manual stop button for robot operations.</p>
+</script>
