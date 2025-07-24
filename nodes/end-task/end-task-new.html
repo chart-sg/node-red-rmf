@@ -118,7 +118,7 @@
         // Populate robot dropdown
         const robotSelect = $('#node-input-robot_name');
         robotSelect.empty();
-        robotSelect.append('<option value="">Use msg.rmf_robot_name</option>');
+        robotSelect.append('<option value="">Use msg.robot_name</option>');
         
         if (node.rmfData.robots && node.rmfData.robots.length > 0) {
           node.rmfData.robots.forEach(robot => {
@@ -129,7 +129,7 @@
         // Populate fleet dropdown
         const fleetSelect = $('#node-input-robot_fleet');
         fleetSelect.empty();
-        fleetSelect.append('<option value="">Use msg.rmf_robot_fleet</option>');
+        fleetSelect.append('<option value="">Use msg.robot_fleet</option>');
         
         if (node.rmfData.fleets && node.rmfData.fleets.length > 0) {
           node.rmfData.fleets.forEach(fleet => {
@@ -150,11 +150,11 @@
           const robotFleet = selectedOption.data('fleet');
           
           // Only auto-select fleet if:
-          // 1. A specific robot is selected (not "Use msg.rmf_robot_name")
-          // 2. Fleet is currently set to "Use msg.rmf_robot_fleet" (empty value)
+          // 1. A specific robot is selected (not "Use msg.robot_name")
+          // 2. Fleet is currently set to "Use msg.robot_fleet" (empty value)
           if (selectedRobot && selectedRobot !== '' && robotFleet) {
             const currentFleetSelection = $('#node-input-robot_fleet').val();
-            // Only auto-select if fleet dropdown is set to "Use msg.rmf_robot_fleet" (empty value)
+            // Only auto-select if fleet dropdown is set to "Use msg.robot_fleet" (empty value)
             if (currentFleetSelection === '') {
               $('#node-input-robot_fleet').val(robotFleet);
             }
@@ -170,7 +170,7 @@
             // Filter robots to only show those from the selected fleet
             const currentRobot = robotSelect.val();
             robotSelect.empty();
-            robotSelect.append('<option value="">Use msg.rmf_robot_name</option>');
+            robotSelect.append('<option value="">Use msg.robot_name</option>');
             
             if (node.rmfData.robots && node.rmfData.robots.length > 0) {
               node.rmfData.robots.forEach(robot => {
@@ -186,10 +186,10 @@
               robotSelect.val(currentRobot);
             }
           } else {
-            // If "Use msg.rmf_robot_fleet" is selected, show all robots but don't reset selection
+            // If "Use msg.robot_fleet" is selected, show all robots but don't reset selection
             const currentRobot = robotSelect.val();
             robotSelect.empty();
-            robotSelect.append('<option value="">Use msg.rmf_robot_name</option>');
+            robotSelect.append('<option value="">Use msg.robot_name</option>');
             
             if (node.rmfData.robots && node.rmfData.robots.length > 0) {
               node.rmfData.robots.forEach(robot => {
@@ -222,7 +222,7 @@
   <div class="form-row">
     <label for="node-input-robot_name">Robot Name</label>
     <select id="node-input-robot_name" style="width: 100%;">
-      <option value="">Use msg.rmf_robot_name</option>
+      <option value="">Use msg.robot_name</option>
     </select>
   </div>
   

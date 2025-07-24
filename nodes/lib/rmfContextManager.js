@@ -490,7 +490,28 @@ async function createRMFTask(taskData, configNode) {
       };
       endpoint = '/tasks/dispatch_task';
     } else {
-      throw new Error('Either robot_name+robot_fleet or robot_fleet must be provided');
+      // Use general dispatch_task_request when no robot or fleet specified
+      taskPayload = {
+        "type": "dispatch_task_request",
+        "request": {
+          "category": "compose",
+          "description": {
+            "category": "dynamic_event",
+            "phases": [
+              {
+                "activity": {
+                  "category": "dynamic_event",
+                  "description": description
+                }
+              }
+            ]
+          },
+          "unix_millis_request_time": 0,
+          "unix_millis_earliest_start_time": 0,
+          "requester": "NR"
+        }
+      };
+      endpoint = '/tasks/dispatch_task';
     }
     
     const response = await axios.post(`http://${host}:${port}${endpoint}`, taskPayload, {
@@ -846,6 +867,27 @@ async function sendDynamicEventGoal(goalData, callbacks = {}) {
         console.log(`RMF: Removed ${robotKey} from active end events tracking (goal rejected)`);
       }
       
+      // Call completion callback if provided
+      if (callbacks.onGoalComplete) {
+        const completionData = {
+          success: false,
+          status: 'rejected',
+          timestamp: new Date().toISOString(),
+          result: null
+        };
+        console.log('RMF: Calling onGoalComplete callback for rejection with:', completionData);
+        callbacks.onGoalComplete(completionData);
+      }
+      
+      // Reset dynamic_event_status to 'active' for rejected non-end events
+      // This ensures robot context stays consistent even when goals are rejected
+      if (goalData.event_type !== 3 && goalData.robot_name && goalData.robot_fleet) {
+        console.log(`RMF: Resetting dynamic_event_status to 'active' for rejected ${goalData.event_type === 1 ? 'goto' : 'unknown'} event`);
+        updateRobotContext(goalData.robot_name, goalData.robot_fleet, { 
+          dynamic_event_status: 'active' 
+        });
+      }
+      
       return {
         success: false,
         error: 'Goal rejected',
@@ -888,6 +930,33 @@ async function sendDynamicEventGoal(goalData, callbacks = {}) {
       activeEndEvents.delete(robotKey);
       console.log(`RMF: Removed ${robotKey} from active end events tracking`);
     }
+
+    // Call completion callback if provided
+    if (callbacks.onGoalComplete) {
+      const completionData = {
+        success: success,
+        status: result && result.status ? result.status : status,
+        timestamp: new Date().toISOString(),
+        result: result
+      };
+      console.log('RMF: Calling onGoalComplete callback with:', completionData);
+      callbacks.onGoalComplete(completionData);
+    }
+    
+    // Reset dynamic_event_status to 'active' for successful non-end events
+    // This indicates the robot is ready for the next dynamic event in the sequence
+    if (success && goalData.event_type !== 3 && goalData.robot_name && goalData.robot_fleet) {
+      console.log(`RMF: Resetting dynamic_event_status to 'active' for completed ${goalData.event_type === 1 ? 'goto' : 'unknown'} event`);
+      updateRobotContext(goalData.robot_name, goalData.robot_fleet, { 
+        dynamic_event_status: 'active' 
+      });
+    } else if (success && goalData.event_type === 3 && goalData.robot_name && goalData.robot_fleet) {
+      // For successful end events, set status to 'completed' to indicate task sequence is done
+      console.log('RMF: Setting dynamic_event_status to \'completed\' for successful end event');
+      updateRobotContext(goalData.robot_name, goalData.robot_fleet, { 
+        dynamic_event_status: 'completed' 
+      });
+    }
     
     return {
       success: success,
@@ -912,6 +981,28 @@ async function sendDynamicEventGoal(goalData, callbacks = {}) {
       const robotKey = `${goalData.robot_fleet}/${goalData.robot_name}`;
       activeEndEvents.delete(robotKey);
       console.log(`RMF: Removed ${robotKey} from active end events tracking (error cleanup)`);
+    }
+    
+    // Call completion callback if provided
+    if (callbacks.onGoalComplete) {
+      const completionData = {
+        success: false,
+        status: 'error',
+        timestamp: new Date().toISOString(),
+        result: null,
+        error: error.message
+      };
+      console.log('RMF: Calling onGoalComplete callback for error with:', completionData);
+      callbacks.onGoalComplete(completionData);
+    }
+    
+    // Reset dynamic_event_status to 'active' for errored non-end events
+    // This ensures robot context stays consistent even when errors occur
+    if (goalData && goalData.event_type !== 3 && goalData.robot_name && goalData.robot_fleet) {
+      console.log(`RMF: Resetting dynamic_event_status to 'active' for errored ${goalData.event_type === 1 ? 'goto' : 'unknown'} event`);
+      updateRobotContext(goalData.robot_name, goalData.robot_fleet, { 
+        dynamic_event_status: 'active' 
+      });
     }
     
     return {

@@ -12,25 +12,28 @@ module.exports = function (RED) {
     // Get reference to rmf-config
     node.configNode = RED.nodes.getNode(config.config);
 
-    // --- Event-driven RMF status handling ---
-    let lastSocketConnected = false;
+    // Simple function to set node status
+    function setStatus(fill, shape, text) {
+      console.log(`[END-TASK] Setting node status: ${text}`);
+      node.status({ fill: fill, shape: shape, text: text });
+    }
+    
     function updateRMFStatus() {
       try {
-        const socket = rmfContextManager.context && rmfContextManager.context.socket;
+        if (!rmfContextManager || !rmfContextManager.context) {
+          setStatus('red', 'ring', 'RMF context unavailable');
+          return;
+        }
+        
+        const socket = rmfContextManager.context.socket;
         if (!socket || !socket.connected) {
-          node.status({ fill: 'yellow', shape: 'ring', text: 'Waiting for RMF connection...' });
-          lastSocketConnected = false;
+          setStatus('red', 'ring', 'RMF connection failed');
         } else {
-          let rmfData = rmfContextManager.getRMFData();
-          if (!rmfData || (rmfData.robots.length === 0 && rmfData.locations.length === 0)) {
-            node.status({ fill: 'yellow', shape: 'dot', text: 'RMF connected, no data' });
-          } else {
-            node.status({ fill: 'green', shape: 'dot', text: `${rmfData.robots.length} robots, ${rmfData.locations.length} locations` });
-          }
-          lastSocketConnected = true;
+          setStatus('grey', 'ring', 'Ready');
         }
       } catch (error) {
-        node.status({ fill: 'red', shape: 'ring', text: 'RMF context error' });
+        console.error('[END-TASK] Error in updateRMFStatus:', error);
+        setStatus('red', 'ring', 'RMF error');
       }
     }
 
@@ -42,15 +45,13 @@ module.exports = function (RED) {
       updateRMFStatus();
     }
     function onSocketDisconnected() {
-      node.status({ fill: 'yellow', shape: 'ring', text: 'RMF disconnected' });
-      lastSocketConnected = false;
+      setStatus('red', 'ring', 'RMF disconnected');
     }
     function onCleanedUp() {
-      node.status({ fill: 'grey', shape: 'ring', text: 'RMF cleaned up' });
-      lastSocketConnected = false;
+      setStatus('red', 'ring', 'RMF cleaned up');
     }
     function onError(err) {
-      node.status({ fill: 'red', shape: 'ring', text: 'RMF error: ' + (err && err.message ? err.message : 'unknown') });
+      setStatus('red', 'ring', 'RMF error: ' + (err && err.message ? err.message : 'unknown'));
     }
 
     rmfEvents.on('ready', onReady);
@@ -74,197 +75,155 @@ module.exports = function (RED) {
 
     node.on('input', async (msg, send, done) => {
       try {
-        // Check if RMF socket is connected
+        // Check RMF connection
         if (!rmfContextManager.context.socket || !rmfContextManager.context.socket.connected) {
-          node.status({ fill: 'yellow', shape: 'ring', text: 'Waiting for RMF connection...' });
-          msg.payload = { status: 'waiting', reason: 'RMF socket not connected yet' };
+          setStatus('yellow', 'ring', 'Waiting for RMF connection');
+          msg.payload = { 
+            status: 'waiting', 
+            reason: 'RMF socket not connected yet' 
+          };
           send(msg);
           return done();
         }
 
-        // Get configuration values (from node config or message)
-        const robotName = node.robot_name || msg.robot_name;
-        const robotFleet = node.robot_fleet || msg.robot_fleet;
+        // Get configuration values (prefer RMF metadata, then payload, then direct message, then node config)
+        const robotName = msg.rmf_robot_name || msg._rmf_robot_name || (msg.payload && msg.payload.robot_name) || msg.robot_name || node.robot_name;
+        const robotFleet = msg.rmf_robot_fleet || msg._rmf_robot_fleet || (msg.payload && msg.payload.robot_fleet) || msg.robot_fleet || node.robot_fleet;
+        const taskId = msg.rmf_task_id || msg._rmf_task_id || (msg.payload && msg.payload.task_id) || msg.task_id;
 
         // Validate inputs
-        const validationResult = await validateInputs(robotName, robotFleet);
-        if (!validationResult.valid) {
-          node.error(validationResult.error);
-          node.status({ fill: 'red', shape: 'ring', text: validationResult.error });
-          msg.payload = { status: 'error', reason: validationResult.error };
-          send(msg);
-          return done();
-        }
-
-        const { validatedRobot, validatedFleet } = validationResult;
-
-        node.status({ fill: 'blue', shape: 'dot', text: 'Processing end...' });
-
-        // Get the latest robot context to retrieve dynamic event information
-        const robotContext = rmfContextManager.getRobotContext(robotName, robotFleet);
-        if (!robotContext) {
-          const error = `Robot ${robotName} from fleet ${robotFleet} not found in context`;
-          node.error(error);
-          node.status({ fill: 'red', shape: 'ring', text: 'Robot not found' });
-          msg.payload = { status: 'error', reason: error };
-          send(msg);
-          return done();
-        }
-
-        node.log(`[RMF][DEBUG] Robot context for end:`, robotContext);
-        node.log(`[RMF][DEBUG] Robot context dynamic_event_seq:`, robotContext.dynamic_event_seq);
-        node.log(`[RMF][DEBUG] Robot context dynamic_event_status:`, robotContext.dynamic_event_status);
-        node.log(`[RMF][DEBUG] Robot context keys:`, Object.keys(robotContext));
-
-        // Check if robot has an active dynamic event
-        if (!robotContext.dynamic_event_seq) {
-          const error = `Robot ${robotName} has no active dynamic event (no dynamic_event_seq)`;
-          node.warn(error);
-          node.status({ fill: 'yellow', shape: 'ring', text: 'No active task' });
-          msg.payload = { status: 'warning', reason: error };
-          send(msg);
-          return done();
-        }
-
-        // Check if robot is in standby state (required for end events)
-        // RMF only accepts end events when robot is in "standby", not "underway"
-        if (robotContext.state && robotContext.state !== 'standby') {
-          const warning = `Robot ${robotName} is in "${robotContext.state}" state. End events only work when robot is in "standby" state. Use cancel-task to stop active robots.`;
-          node.warn(warning);
-          node.status({ fill: 'yellow', shape: 'ring', text: `Robot ${robotContext.state}, not standby` });
+        if (!robotName || !robotFleet) {
+          setStatus('red', 'ring', 'Missing robot info');
           msg.payload = { 
-            status: 'warning', 
-            reason: warning,
-            robot_state: robotContext.state,
-            suggestion: 'Use cancel-task node to stop active robots' 
+            status: 'failed', 
+            reason: 'Robot name and fleet are required' 
           };
           send(msg);
           return done();
         }
 
-        // Log diagnostic information
-        node.log(`[RMF][DEBUG] Ending dynamic event for robot ${robotName}:`);
-        node.log(`[RMF][DEBUG] - dynamic_event_seq: ${robotContext.dynamic_event_seq}`);
-        node.log(`[RMF][DEBUG] - dynamic_event_status: ${robotContext.dynamic_event_status}`);
-
-        try {
-          // Prepare robot context with correct field names for sendDynamicEventControl
-          // The function expects robot_name and robot_fleet, but our context has name and fleet
-          const robotContextForEnd = {
-            robot_name: robotContext.name,
-            robot_fleet: robotContext.fleet,
-            dynamic_event_seq: robotContext.dynamic_event_seq,
-            dynamic_event_status: robotContext.dynamic_event_status
-          };
-
-          node.log(`[RMF][DEBUG] Robot context prepared for end:`, robotContextForEnd);
-
-          // Send end event using rmfContextManager
-          const endResult = await rmfContextManager.sendDynamicEventControl('end', robotContextForEnd);
-          
-          node.log(`[RMF][DEBUG] End result:`, endResult);
-
-          if (endResult.success) {
-            node.status({ fill: 'green', shape: 'dot', text: 'End sent successfully' });
-            
-            // Prepare success output payload
-            const outputPayload = {
-              status: 'success',
-              action: 'end',
-              robot_name: robotName,
-              robot_fleet: robotFleet,
-              dynamic_event_seq: robotContext.dynamic_event_seq,
-              result: endResult,
-              timestamp: new Date().toISOString()
-            };
-
-            msg.payload = outputPayload;
-            send(msg);
-            node.log(`[RMF][INFO] End event sent successfully for robot ${robotName}`);
-            
-          } else {
-            const error = `Failed to send end event: ${endResult.error || 'Unknown error'}`;
-            node.error(error);
-            node.status({ fill: 'red', shape: 'ring', text: 'End failed' });
-            
-            msg.payload = { 
-              status: 'error', 
-              reason: error,
-              robot_name: robotName,
-              robot_fleet: robotFleet,
-              result: endResult
-            };
-            send(msg);
-          }
-
-        } catch (endError) {
-          const error = `Exception during end event: ${endError.message}`;
-          node.error(error);
-          node.status({ fill: 'red', shape: 'ring', text: 'End exception' });
-          
+        // Validate robot exists in RMF data
+        const rmfData = rmfContextManager.getRMFData();
+        if (!rmfData || rmfData.robots.length === 0) {
+          setStatus('red', 'ring', 'No RMF data');
           msg.payload = { 
-            status: 'exception', 
-            reason: error,
-            robot_name: robotName,
-            robot_fleet: robotFleet 
+            status: 'failed', 
+            reason: 'RMF context not available. Ensure RMF Config node is deployed and connected.' 
           };
           send(msg);
+          return done();
         }
 
-        done();
-        
-      } catch (error) {
-        node.error('Error processing end-task request: ' + error.message);
-        node.status({ fill: 'red', shape: 'ring', text: 'Error: ' + error.message });
-        msg.payload = { status: 'error', reason: error.message };
-        send(msg);
-        done(error);
-      }
-    });
-    
-    // Validation function
-    async function validateInputs(robotName, robotFleet) {
-      try {
-        // Get RMF data
-        let rmfData = rmfContextManager.getRMFData();
-        
-        if (!rmfData || (rmfData.robots.length === 0 && rmfData.locations.length === 0)) {
-          return { valid: false, error: 'RMF context not available. Ensure RMF Config node is deployed and connected.' };
-        }
-        
-        // Validate required fields
-        if (!robotName) {
-          return { valid: false, error: 'Robot name is required' };
-        }
-        
-        if (!robotFleet) {
-          return { valid: false, error: 'Robot fleet is required' };
-        }
-        
-        // Validate robot exists
         const validatedRobot = rmfData.robots.find(r => {
           const nameMatch = r.name === robotName || r.robot_name === robotName;
           const fleetMatch = r.fleet === robotFleet || r.fleet_name === robotFleet;
           return nameMatch && fleetMatch;
         });
-        
+
         if (!validatedRobot) {
-          return { valid: false, error: `Robot "${robotName}" from fleet "${robotFleet}" not found in RMF data` };
+          setStatus('red', 'ring', 'Robot not found');
+          msg.payload = { 
+            status: 'failed', 
+            reason: `Robot "${robotName}" not found in fleet "${robotFleet}"` 
+          };
+          send(msg);
+          return done();
         }
-        
-        // Validate fleet exists
-        const validatedFleet = robotFleet;
-        
-        return {
-          valid: true,
-          validatedRobot,
-          validatedFleet
-        };
-        
+
+        setStatus('blue', 'dot', 'Ending task');
+
+        // Get robot context to find current task state
+        const robotContext = rmfContextManager.getRobotContext(robotName, robotFleet);
+        if (!robotContext) {
+          setStatus('red', 'ring', 'Robot context not found');
+          msg.payload = { 
+            status: 'failed', 
+            reason: `Robot context not found for ${robotName} (${robotFleet})` 
+          };
+          send(msg);
+          return done();
+        }
+
+        // Validate robot context has required fields for end event
+        if (!robotContext.dynamic_event_seq) {
+          setStatus('red', 'ring', 'No active task');
+          msg.payload = { 
+            status: 'failed', 
+            reason: `Robot ${robotName} has no active dynamic event sequence. Ensure the robot has an active task from start-task/goto-place nodes.` 
+          };
+          send(msg);
+          return done();
+        }
+
+        // Send end event using dynamic event control
+        try {
+          // Format robot context for sendDynamicEventControl (expects robot_name, robot_fleet)
+          const formattedRobotContext = {
+            robot_name: robotContext.name || robotName,
+            robot_fleet: robotContext.fleet || robotFleet,
+            dynamic_event_seq: robotContext.dynamic_event_seq
+          };
+          
+          console.log(`[END-TASK] Formatted robot context for end event:`, formattedRobotContext);
+          
+          const endResult = await rmfContextManager.sendDynamicEventControl('end', formattedRobotContext);
+          
+          if (endResult.success) {
+            setStatus('green', 'dot', 'Task ended');
+            
+            msg.payload = {
+              status: 'completed',
+              action: 'end',
+              robot_name: robotName,
+              robot_fleet: robotFleet,
+              task_id: taskId,
+              dynamic_event_seq: robotContext.dynamic_event_seq,
+              timestamp: new Date().toISOString()
+            };
+            
+            send(msg);
+            
+          } else {
+            setStatus('red', 'ring', 'End failed');
+            msg.payload = { 
+              status: 'failed', 
+              reason: `Failed to send end event: ${endResult.error || 'Unknown error'}`,
+              robot_name: robotName,
+              robot_fleet: robotFleet
+            };
+            send(msg);
+          }
+
+        } catch (error) {
+          console.error('[END-TASK] Error during end event:', error);
+          setStatus('red', 'ring', 'End error');
+          msg.payload = { 
+            status: 'error', 
+            reason: `Exception during end event: ${error.message}`,
+            robot_name: robotName,
+            robot_fleet: robotFleet,
+            debug_info: {
+              robot_context_available: !!robotContext,
+              dynamic_event_seq: robotContext?.dynamic_event_seq,
+              dynamic_event_status: robotContext?.dynamic_event_status,
+              task_id: robotContext?.task_id
+            }
+          };
+          send(msg);
+        }
+
+        done();
+
       } catch (error) {
-        return { valid: false, error: 'Validation error: ' + error.message };
+        setStatus('red', 'ring', 'Task error');
+        msg.payload = { 
+          status: 'error', 
+          reason: error.message 
+        };
+        send(msg);
+        done(error);
       }
-    }
+    });
   }
 
   RED.nodes.registerType('end-task', EndTaskNode);
