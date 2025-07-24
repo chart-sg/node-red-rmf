@@ -152,7 +152,7 @@
           // 2. Fleet is currently set to "Use msg.rmf_robot_fleet" (empty value)
           if (selectedRobot && selectedRobot !== '' && robotFleet) {
             const currentFleetSelection = $('#node-input-robot_fleet').val();
-            // Only auto-select if fleet dropdown is set to "Use msg.robot_fleet" (empty value)
+            // Only auto-select if fleet dropdown is set to "Use msg.rmf_robot_fleet" (empty value)
             if (currentFleetSelection === '') {
               $('#node-input-robot_fleet').val(robotFleet);
             }
@@ -168,7 +168,7 @@
             // Filter robots to only show those from the selected fleet
             const currentRobot = robotSelect.val();
             robotSelect.empty();
-            robotSelect.append('<option value="">Use msg.robot_name</option>');
+            robotSelect.append('<option value="">Use msg.rmf_robot_name</option>');
             
             if (node.rmfData.robots && node.rmfData.robots.length > 0) {
               node.rmfData.robots.forEach(robot => {
@@ -184,10 +184,10 @@
               robotSelect.val(currentRobot);
             }
           } else {
-            // If "Use msg.robot_fleet" is selected, show all robots but don't reset selection
+            // If "Use msg.rmf_robot_fleet" is selected, show all robots but don't reset selection
             const currentRobot = robotSelect.val();
             robotSelect.empty();
-            robotSelect.append('<option value="">Use msg.robot_name</option>');
+            robotSelect.append('<option value="">Use msg.rmf_robot_name</option>');
             
             if (node.rmfData.robots && node.rmfData.robots.length > 0) {
               node.rmfData.robots.forEach(robot => {
@@ -202,15 +202,8 @@
       }
     },
     oneditsave: function() {
-      // Validation
-      const robotName = $('#node-input-robot_name').val();
-      const robotFleet = $('#node-input-robot_fleet').val();
-      
-      if (!robotName && !robotFleet) {
-        RED.notify('Either robot name or robot fleet must be specified (or use message properties)', 'error');
-        return false;
-      }
-      
+      // No validation needed - robot info can come from message properties
+      // The node will validate at runtime and provide appropriate error messages
       return true;
     }
   });
@@ -232,14 +225,14 @@
   <div class="form-row">
     <label for="node-input-robot_name">Robot Name <span style="color: red;">*</span></label>
     <select id="node-input-robot_name" style="width: 100%;">
-      <option value="">Use msg.robot_name</option>
+      <option value="">Use msg.rmf_robot_name</option>
     </select>
   </div>
   
   <div class="form-row">
     <label for="node-input-robot_fleet">Robot Fleet <span style="color: red;">*</span></label>
     <select id="node-input-robot_fleet" style="width: 100%;">
-      <option value="">Use msg.robot_fleet</option>
+      <option value="">Use msg.rmf_robot_fleet</option>
     </select>
   </div>
   
@@ -253,7 +246,7 @@
     • Both Robot name and fleet are required<br/>
     • Robot name and fleet are constrained to each other<br/>
     • If unique robot name is provided, fleet will be auto-selected<br/>
-    • Use "Use msg.xxx" dropdown options to pass values via message properties<br/>
+    • Use "Use msg.rmf_xxx" dropdown options to pass values via message properties<br/>
     • The node will cancel the currently active dynamic event for the specified robot<br/>
     • Robot must have an active dynamic event with valid dynamic_event_id
   </div>
@@ -265,19 +258,19 @@
   <h3>Configuration</h3>
   <dl class="message-properties">
     <dt>Robot Name <span class="property-type">string</span></dt>
-    <dd>The name of the robot whose task should be canceled (required). Select from dropdown or use "Use msg.robot_name" to pass via message.</dd>
+    <dd>The name of the robot whose task should be canceled (required). Select from dropdown or use "Use msg.rmf_robot_name" to pass via message.</dd>
     
     <dt>Robot Fleet <span class="property-type">string</span></dt>
-    <dd>The fleet the robot belongs to (required). Auto-selected when robot is chosen. Select from dropdown or use "Use msg.robot_fleet" to pass via message.</dd>
+    <dd>The fleet the robot belongs to (required). Auto-selected when robot is chosen. Select from dropdown or use "Use msg.rmf_robot_fleet" to pass via message.</dd>
   </dl>
   
   <h3>Inputs</h3>
   <dl class="message-properties">
-    <dt>msg.robot_name <span class="property-type">string</span></dt>
-    <dd>Robot name (used when "Use msg.robot_name" is selected)</dd>
+    <dt>msg.rmf_robot_name <span class="property-type">string</span></dt>
+    <dd>Robot name (used when "Use msg.rmf_robot_name" is selected)</dd>
     
-    <dt>msg.robot_fleet <span class="property-type">string</span></dt>
-    <dd>Robot fleet (used when "Use msg.robot_fleet" is selected)</dd>
+    <dt>msg.rmf_robot_fleet <span class="property-type">string</span></dt>
+    <dd>Robot fleet (used when "Use msg.rmf_robot_fleet" is selected)</dd>
   </dl>
   
   <h3>Outputs</h3>
