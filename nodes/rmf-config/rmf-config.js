@@ -90,4 +90,71 @@ module.exports = function (RED) {
   }
 
   RED.nodes.registerType('rmf-config', RmfConfigNode);
+  
+  // Central API endpoint for all RMF nodes to get robot/location data
+  RED.httpAdmin.get('/rmf/data', RED.auth.needsPermission('read'), function(req, res) {
+    try {
+      const rmfContextManager = require('../lib/rmfContextManager');
+      
+      // Get data directly from rmfContextManager
+      let rmfData = rmfContextManager.getRMFData();
+      
+      // If no data available, try to force refresh
+      if (!rmfData || (rmfData.robots.length === 0 && rmfData.locations.length === 0)) {
+        // Try to force-refresh the data
+        rmfContextManager.forceProcessAllLatest();
+        
+        // Re-check after forcing refresh
+        rmfData = rmfContextManager.getRMFData();
+      }
+      
+      // Check if RMF context is initialized and has data
+      if (!rmfData) {
+        return res.json({
+          robots: [],
+          locations: [],
+          fleets: [],
+          lastUpdated: {},
+          status: 'not_initialized',
+          message: 'RMF context not initialized'
+        });
+      }
+      
+      // Extract unique fleets from robots
+      const fleets = [...new Set(rmfData.robots.map(robot => robot.fleet))];
+      
+      // Prepare response data
+      const responseData = {
+        robots: rmfData.robots.map(robot => ({
+          name: robot.name,
+          fleet: robot.fleet,
+          battery: robot.battery_percent,
+          status: robot.status
+        })),
+        locations: rmfData.locations.map(location => ({
+          name: location.name,
+          level: location.level,
+          x: location.x,
+          y: location.y
+        })),
+        fleets: fleets,
+        lastUpdated: rmfData.lastUpdated,
+        status: 'ready',
+        message: 'RMF data available'
+      };
+      
+      res.json(responseData);
+    } catch (error) {
+      console.error('Error fetching RMF data:', error);
+      res.status(500).json({ 
+        error: 'Failed to fetch RMF data',
+        robots: [],
+        locations: [],
+        fleets: [],
+        lastUpdated: {},
+        status: 'error',
+        message: error.message
+      });
+    }
+  });
 };

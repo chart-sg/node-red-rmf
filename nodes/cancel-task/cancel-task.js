@@ -155,14 +155,14 @@ module.exports = function (RED) {
           return done();
         }
 
-        if (!robotContext.dynamic_event_id) {
-          setStatus('red', 'ring', 'Missing event ID');
-          msg.payload = { 
-            status: 'failed', 
-            reason: `Robot ${robotName} has no dynamic_event_id for cancel operation. The dynamic event may not have started yet.` 
-          };
-          send(msg);
-          return done();
+        // Note: dynamic_event_id might not be available immediately after task start
+        // RMF typically uses the feedback id as the dynamic_event_id
+        // If not available, we'll try to cancel using just the sequence number
+        let dynamicEventId = robotContext.dynamic_event_id;
+        if (!dynamicEventId) {
+          console.log(`[CANCEL-TASK] No dynamic_event_id available for ${robotName}, will attempt cancel with sequence ${robotContext.dynamic_event_seq}`);
+          // Use sequence number as fallback (common in RMF implementations)
+          dynamicEventId = robotContext.dynamic_event_seq;
         }
 
         // Send cancel event using dynamic event control
@@ -172,7 +172,7 @@ module.exports = function (RED) {
             robot_name: robotContext.name || robotName,
             robot_fleet: robotContext.fleet || robotFleet,
             dynamic_event_seq: robotContext.dynamic_event_seq,
-            dynamic_event_id: robotContext.dynamic_event_id
+            dynamic_event_id: dynamicEventId
           };
           
           console.log(`[CANCEL-TASK] Formatted robot context for cancel event:`, formattedRobotContext);
@@ -189,7 +189,7 @@ module.exports = function (RED) {
               robot_fleet: robotFleet,
               task_id: taskId,
               dynamic_event_seq: robotContext.dynamic_event_seq,
-              dynamic_event_id: robotContext.dynamic_event_id,
+              dynamic_event_id: dynamicEventId,
               timestamp: new Date().toISOString()
             };
             

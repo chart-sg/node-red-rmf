@@ -93,27 +93,16 @@ module.exports = function (RED) {
         }
 
         // Get configuration values (prefer RMF metadata, then payload, then direct message, then node config)
-        const robotName = msg.rmf_robot_name || msg._rmf_robot_name || (msg.payload && msg.payload.robot_name) || msg.robot_name || node.robot_name;
-        const robotFleet = msg.rmf_robot_fleet || msg._rmf_robot_fleet || (msg.payload && msg.payload.robot_fleet) || msg.robot_fleet || node.robot_fleet;
+        const robotName = msg.rmf_robot_name || (msg.payload && msg.payload.robot_name) || msg.robot_name || node.robot_name;
+        const robotFleet = msg.rmf_robot_fleet || (msg.payload && msg.payload.robot_fleet) || msg.robot_fleet || node.robot_fleet;
         const locationName = node.location_name || msg.location_name;
         const zoneType = node.zone_type || msg.zone_type || '';
         const stubbornPeriod = node.stubborn_period !== undefined ? node.stubborn_period : 
                                (msg.stubborn_period !== undefined ? msg.stubborn_period : 0);
         const parallelBehaviour = node.parallel_behaviour || msg.parallel_behaviour || 'abort';
         
-        // Validate parallel behaviour (queue is not supported - use multiple start-task → goto-place chains)
-        if (parallelBehaviour === 'queue') {
-          setStatus('red', 'ring', 'Queue not supported');
-          msg.payload = { 
-            status: 'failed', 
-            reason: 'Queue behavior is not supported. Use multiple start-task → goto-place chains instead.' 
-          };
-          send([null, msg, null]); // Send to failed output
-          return done();
-        }
-        
         // Extract task information from previous start-task node (prefer RMF metadata)
-        const taskId = msg.rmf_task_id || msg._rmf_task_id || (msg.payload && msg.payload.task_id) || msg.task_id;
+        const taskId = msg.rmf_task_id || (msg.payload && msg.payload.task_id) || msg.task_id;
         const dynamicEventSeq = msg.dynamic_event_seq || (msg.payload && msg.payload.dynamic_event_seq);
 
         // Validate inputs
@@ -385,70 +374,5 @@ module.exports = function (RED) {
 
   RED.nodes.registerType('goto-place', GoToPlaceNode, {
     outputs: 3  // Success, Failed, Status
-  });
-  
-  // API endpoint to provide RMF data for dropdown population
-  RED.httpAdmin.get('/rmf/data', RED.auth.needsPermission('goto-place.read'), function(req, res) {
-    try {
-      // Get data directly from rmfContextManager
-      let rmfData = rmfContextManager.getRMFData();
-      
-      // If no data available, try to force refresh
-      if (!rmfData || (rmfData.robots.length === 0 && rmfData.locations.length === 0)) {
-        // Try to force-refresh the data
-        rmfContextManager.forceProcessAllLatest();
-        
-        // Re-check after forcing refresh
-        rmfData = rmfContextManager.getRMFData();
-      }
-      
-      // Check if RMF context is initialized and has data
-      if (!rmfData) {
-        return res.json({
-          robots: [],
-          locations: [],
-          fleets: [],
-          lastUpdated: {},
-          status: 'not_initialized',
-          message: 'RMF context not initialized'
-        });
-      }
-      
-      // Extract unique fleets from robots
-      const fleets = [...new Set(rmfData.robots.map(robot => robot.fleet))];
-      
-      // Prepare response data
-      const responseData = {
-        robots: rmfData.robots.map(robot => ({
-          name: robot.name,
-          fleet: robot.fleet,
-          battery: robot.battery_percent,
-          status: robot.status
-        })),
-        locations: rmfData.locations.map(location => ({
-          name: location.name,
-          level: location.level,
-          x: location.x,
-          y: location.y
-        })),
-        fleets: fleets,
-        lastUpdated: rmfData.lastUpdated,
-        status: 'ready',
-        message: 'RMF data available'
-      };
-      
-      res.json(responseData);
-    } catch (error) {
-      console.error('Error fetching RMF data:', error);
-      res.status(500).json({ 
-        error: 'Failed to fetch RMF data',
-        robots: [],
-        locations: [],
-        fleets: [],
-        lastUpdated: {},
-        status: 'error',
-        message: error.message
-      });
-    }
   });
 };
