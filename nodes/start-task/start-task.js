@@ -29,9 +29,18 @@ module.exports = function (RED) {
         const socket = rmfContextManager.context.socket;
         if (!socket || !socket.connected) {
           setStatus('red', 'ring', 'RMF connection failed');
-        } else {
-          setStatus('grey', 'ring', 'Ready');
+          return;
         }
+        
+        // Also check if we have RMF data (building map, robot data)
+        const rmfData = rmfContextManager.getRMFData();
+        if (!rmfData || rmfData.robots.length === 0) {
+          setStatus('yellow', 'ring', 'RMF connected, loading data...');
+          return;
+        }
+        
+        // All good - socket connected and data available
+        setStatus('green', 'dot', 'Ready');
       } catch (error) {
         console.error('[START-TASK] Error in updateRMFStatus:', error);
         setStatus('red', 'ring', 'RMF error');
@@ -54,12 +63,17 @@ module.exports = function (RED) {
     function onError(err) {
       setStatus('red', 'ring', 'RMF error: ' + (err && err.message ? err.message : 'unknown'));
     }
+    function onDataUpdated() {
+      // Called when RMF data (building map, robots) is updated
+      updateRMFStatus();
+    }
 
     rmfEvents.on('ready', onReady);
     rmfEvents.on('socket_connected', onSocketConnected);
     rmfEvents.on('socket_disconnected', onSocketDisconnected);
     rmfEvents.on('cleanedUp', onCleanedUp);
     rmfEvents.on('error', onError);
+    rmfEvents.on('data_updated', onDataUpdated); // Listen for data updates
 
     // Initial status
     updateRMFStatus();
@@ -71,6 +85,7 @@ module.exports = function (RED) {
       rmfEvents.off('socket_disconnected', onSocketDisconnected);
       rmfEvents.off('cleanedUp', onCleanedUp);
       rmfEvents.off('error', onError);
+      rmfEvents.off('data_updated', onDataUpdated);
       if (done) done();
     });
 

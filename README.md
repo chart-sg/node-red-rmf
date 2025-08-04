@@ -1,23 +1,54 @@
 # CHART Node-RED RMF Nodes
 
-A collection of Node-RED subflow modules for RMF (Robot Middleware Framework) integration.
+A collection of Node-RED subflow modules for RMF (Robot Middleware Framework) integration, built on the Chart SharedManager architecture for reliable multi-plugin ROS2 operations.
 
 ## Overview
 
 This package provides reusable Node-RED subflows designed for RMF applications. Each subflow is packaged as a proper Node-RED module that can be easily installed and used in Node-RED flows.
 
+### ✨ Key Features
+
+- **🌉 SharedManager Integration**: Built-in `@chart/node-red-ros2-manager` for reliable ROS2 operations
+- **🚀 RMF-Specific Nodes**: Fleet management, task dispatch, and coordination nodes
+- **🤝 Multi-Plugin Compatible**: Works alongside `@chart/node-red-ros2` and other Chart ROS2 plugins
+- **⚡ Production Ready**: No spinning conflicts, proper resource management
+
 ## Installation
 
-### From npm (when published)
 ```bash
+# Install RMF nodes (ros2-manager included automatically)
 npm install @chart/node-red-rmf
+
+# Or install both ROS2 + RMF for complete integration
+npm install @chart/node-red-ros2 @chart/node-red-rmf
 ```
 
-### Local Development
-```bash
-cd ~/.node-red
-npm install /path/to/node-red-chart-rmf
+*The `@chart/node-red-ros2-manager` is automatically installed as a dependency for reliable ROS2 operations.*
+
+## 🏗️ Architecture
+
+This package uses the **Chart SharedManager** architecture for conflict-free ROS2 integration:
+
 ```
+┌─────────────────────────────────────────────────────────────┐
+│                @chart/node-red-ros2-manager                 │
+│              (Shared ROS2 Context Manager)                 │
+└─────────────────────┬───────────────────────────────────────┘
+                      │
+          ┌───────────┴──────────┐
+          │                      │
+┌─────────▼──────────┐  ┌────────▼─────────┐
+│ @chart/node-red-   │  │ @chart/node-red- │
+│ ros2               │  │ rmf              │
+│ (Educational)      │  │ (Production)     │
+└────────────────────┘  └──────────────────┘
+```
+
+### Benefits:
+- ✅ **No ActionClient spinning conflicts** - SafeActionClient pattern
+- ✅ **Multi-plugin compatibility** - shared ROS2 context across all Chart plugins
+- ✅ **Production reliability** - proper resource management and error recovery
+- ✅ **RMF-specific optimizations** - fleet coordination and task management
 
 ## Available Nodes
 
@@ -25,6 +56,22 @@ npm install /path/to/node-red-chart-rmf
 - **Category**: RMF
 - **Function**: A simple test node that demonstrates the subflow structure
 - **Configuration**: Message text (default: "hello-word")
+
+## 🎯 Compatibility & Usage
+
+- **SharedManager Required**: This package requires the ros2-manager for all ROS2 operations
+- **Multi-Plugin**: Works seamlessly with `@chart/node-red-ros2` and other Chart ROS2 plugins
+- **Node-RED**: Hot deployment support, proper cleanup during redeployments
+- **Production Focus**: Designed for reliable fleet management and task coordination
+
+### Integration Example
+
+```javascript
+// All RMF nodes automatically use SharedManager
+const manager = require('@chart/node-red-ros2-manager');
+// Manager is initialized automatically by the nodes
+// No manual setup required for users
+```
 
 ## Development
 
@@ -103,8 +150,15 @@ npm install . --prefix ~/.node-red
 
 ## Dependencies
 
+- **@chart/node-red-ros2-manager** - Shared ROS2 context management (automatically installed)
+- **rclnodejs** - ROS2 Node.js bindings (automatically installed)
 - Node-RED >= 1.3.0 (for subflow module support)
 - Node.js >= 12.0.0
+
+## 🔗 Related Packages
+
+- [`@chart/node-red-ros2-manager`](https://github.com/chart-sg/node-red-ros2-manager) - Core ROS2 context manager
+- [`@chart/node-red-ros2`](https://github.com/chart-sg/node-red-ros2) - General ROS2 nodes for Node-RED
 
 ## License
 

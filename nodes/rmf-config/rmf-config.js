@@ -6,6 +6,7 @@ module.exports = function (RED) {
     cleanup,
     softCleanup
   } = require('../lib/rmfContextManager');
+  // Bridge-based shared manager is now handled internally
 
   function RmfConfigNode(config) {
     RED.nodes.createNode(this, config);
@@ -14,34 +15,37 @@ module.exports = function (RED) {
     this.host = config.host;
     this.port = config.port;
     this.jwt = config.jwt;
-    this.rosDomain = config.rosDomain;
+    this.rosDomain = config.rosDomain; // Default RMF to domain 42
+    this.initializationDelay = parseInt(config.initializationDelay) || 0; // No delay needed with shared manager
+    this.maxRetries = parseInt(config.maxRetries) || 3;
 
-    // Set ROS domain ID
-    process.env.RCLNODEJS_ROS_DOMAIN_ID = this.rosDomain;
+    console.log(`RMF Config: Using ROS domain ID ${this.rosDomain} with shared manager`);
 
-    // Initialize edu-pattern ROS2 instance
-    const { Ros2Instance } = require('../lib/rmf-ros2-instance');
-
-    // Initialize ROS2 and socket connection
+    // Initialize ROS2 using shared manager
     (async () => {
       try {
-        this.status({ fill: 'yellow', shape: 'dot', text: 'connecting...' });
+        this.status({ fill: 'yellow', shape: 'dot', text: 'initializing...' });
         
-        // Initialize edu-pattern ROS2 instance first
-        console.log('RMF Config: Initializing edu-pattern ROS2 instance...');
-        const ros2Instance = Ros2Instance.instance();
-        console.log('RMF Config: Edu-pattern ROS2 instance ready');
+        console.log('RMF Config: Starting RMF initialization with shared ROS2 manager...');
         
-        // Try ROS2 initialization for rmfContextManager
-        await initROS2();
+        // Initialize using shared manager - this is safe and conflict-free
+        await initROS2({
+          domainId: this.rosDomain,
+          args: []
+        });
+        
+        this.status({ fill: 'yellow', shape: 'dot', text: 'connecting socket...' });
         
         // Socket connection is required for task status updates
         await connectSocket({ host: this.host, port: this.port, jwt: this.jwt });
         setGlobalContext(this.context().global);
         
         this.status({ fill: 'green', shape: 'dot', text: 'connected' });
+        console.log('RMF Config: Initialization completed successfully with shared manager');
+        
       } catch (err) {
-        this.status({ fill: 'red', shape: 'ring', text: 'connection failed' });
+        console.error('RMF Config: Initialization failed:', err.message);
+        this.status({ fill: 'red', shape: 'ring', text: 'initialization failed' });
         this.error('RMF Config Error: ' + err.message);
       }
     })();
@@ -51,39 +55,35 @@ module.exports = function (RED) {
       try {
         console.log('RMF Config node closing...');
         
-        // Use soft cleanup during deployment to preserve RMF data
-        // Only do full cleanup on actual shutdown
         if (removed) {
-          console.log('RMF Config node being removed, triggering full cleanup...');
-          
-          // Use a timeout to ensure cleanup happens but doesn't block Node-RED
+          console.log('RMF Config: Node removed - performing full cleanup...');
+          // Full cleanup when node is actually removed (not just redeployed)
           setTimeout(async () => {
             try {
               await cleanup();
-              console.log('Full RMF cleanup completed');
+              console.log('RMF Config: Full cleanup completed');
             } catch (error) {
-              console.error('Error during full RMF cleanup:', error);
+              console.error('RMF Config: Error during full cleanup:', error);
             }
           }, 100);
         } else {
-          console.log('RMF Config node being restarted, triggering soft cleanup...');
-          
-          // Use a timeout to ensure cleanup happens but doesn't block Node-RED
+          console.log('RMF Config: Redeployment detected - preserving shared manager...');
+          // During redeployment, don't destroy shared manager
+          // Just clean up local references
           setTimeout(async () => {
             try {
               await softCleanup();
-              console.log('Soft RMF cleanup completed');
+              console.log('RMF Config: Soft cleanup completed (shared manager preserved)');
             } catch (error) {
-              console.error('Error during soft RMF cleanup:', error);
+              console.error('RMF Config: Error during soft cleanup:', error);
             }
           }, 100);
         }
         
-        // Call done immediately to not block Node-RED
         if (done) done();
         
       } catch (err) {
-        console.error('Error during RMF Config node close:', err);
+        console.error('RMF Config: Error during node close:', err);
         if (done) done(err);
       }
     });

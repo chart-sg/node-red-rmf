@@ -1,18 +1,19 @@
 // File: nodes/lib/rmf-safe-action-client.js
 
 /**
- * Safe action client wrapper that prevents heap corruption
- * This wrapper ensures proper resource lifecycle management
+ * Safe action client wrapper that uses the shared ROS2 bridge
+ * This prevents node destruction issues by using centralized action management
  */
 
 class SafeActionClient {
-  constructor(rosNode, actionType, actionPath) {
-    this.rosNode = rosNode;
+  constructor(nodeId, actionType, actionPath) {
+    this.nodeId = nodeId; // Changed from node to nodeId
     this.actionType = actionType;
     this.actionPath = actionPath;
-    this.actionClient = null;
+    this.actionClientId = null; // Bridge action client ID
     this.isDestroyed = false;
     this.isInitialized = false;
+    this.bridge = null;
   }
 
   async initialize() {
@@ -21,18 +22,29 @@ class SafeActionClient {
     }
 
     try {
-      const { ActionClient } = require('rclnodejs');
+      // Get the shared ROS2 manager
+      const bridge = require('@chart/node-red-ros2-manager');
+      this.bridge = bridge.getROS2Manager();
       
-      console.log('SafeActionClient: Creating action client for', this.actionPath);
+      if (!this.bridge || !this.bridge.initialized) {
+        throw new Error('ROS2 manager not available. Ensure manager is initialized first.');
+      }
       
-      this.actionClient = new ActionClient(
-        this.rosNode,
+      console.log('SafeActionClient: Creating action client via manager for', this.actionType, 'at', this.actionPath);
+      
+      // Create action client through the manager
+      this.actionClientId = await this.bridge.createActionClient(
+        this.nodeId,
         this.actionType,
-        this.actionPath
+        this.actionPath,
+        {
+          onFeedback: null, // Will be provided per-goal
+          onResult: null    // Will be provided per-goal
+        }
       );
       
-      this.isInitialized = true;
-      console.log('SafeActionClient: Action client initialized');
+      this.isInitialized = true;      
+      console.log('SafeActionClient: Action client initialized via manager:', this.actionClientId);
       
     } catch (error) {
       console.error('SafeActionClient: Failed to initialize action client:', error.message);
@@ -41,12 +53,12 @@ class SafeActionClient {
   }
 
   isActionServerAvailable() {
-    if (!this.isInitialized || this.isDestroyed || !this.actionClient) {
+    if (!this.isInitialized || this.isDestroyed || !this.actionClientId || !this.bridge) {
       return false;
     }
     
     try {
-      return this.actionClient.isActionServerAvailable();
+      return this.bridge.isActionServerAvailable(this.actionClientId);
     } catch (error) {
       console.warn('SafeActionClient: Error checking server availability:', error.message);
       return false;
@@ -54,21 +66,32 @@ class SafeActionClient {
   }
 
   async sendGoal(goal, feedbackCallback = null) {
-    if (!this.isInitialized || this.isDestroyed || !this.actionClient) {
+    if (!this.isInitialized || this.isDestroyed || !this.actionClientId || !this.bridge) {
       throw new Error('Action client not initialized or destroyed');
     }
 
     try {
-      console.log('SafeActionClient: Sending goal:', goal);
+      console.log('SafeActionClient: Sending goal via manager:', goal);
       
-      const goalHandlePromise = this.actionClient.sendGoal(goal, feedbackCallback);
-      const goalHandle = await goalHandlePromise;
+      // Send goal through the manager
+      const result = await this.bridge.sendGoal(this.actionClientId, goal, feedbackCallback);
       
-      console.log('SafeActionClient: Goal sent, handle received');
+      console.log('SafeActionClient: Goal completed via manager');
+      
+      // Create a goal handle-like object for compatibility
+      const goalHandle = {
+        isAccepted: () => true, // If we got here, it was accepted
+        isSucceeded: () => result.success,
+        isCanceled: () => result.canceled,
+        isAborted: () => result.aborted,
+        getResult: async () => result.result,
+        result: result.result
+      };
+      
       return goalHandle;
       
     } catch (error) {
-      console.error('SafeActionClient: Error sending goal:', error.message);
+      console.error('SafeActionClient: Error sending goal via manager:', error.message);
       throw error;
     }
   }
@@ -80,25 +103,19 @@ class SafeActionClient {
 
     this.isDestroyed = true;
 
-    if (this.actionClient) {
+    if (this.actionClientId && this.bridge) {
       try {
-        console.log('SafeActionClient: Destroying action client');
+        console.log('SafeActionClient: Destroying action client via manager:', this.actionClientId);
         
-        // Use timeout to prevent hanging
-        const destroyTimeout = setTimeout(() => {
-          console.warn('SafeActionClient: Destroy timeout, forcing cleanup');
-          this.actionClient = null;
-        }, 5000);
+        this.bridge.destroyActionClient(this.actionClientId);
         
-        this.actionClient.destroy();
-        clearTimeout(destroyTimeout);
-        
-        console.log('SafeActionClient: Action client destroyed successfully');
+        console.log('SafeActionClient: Action client destroyed successfully via manager');
         
       } catch (error) {
         console.warn('SafeActionClient: Error during destroy:', error.message);
       } finally {
-        this.actionClient = null;
+        this.actionClientId = null;
+        this.bridge = null;
       }
     }
   }

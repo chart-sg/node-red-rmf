@@ -38,11 +38,6 @@ tmp-*.js
 *.bak
 *.backup
 
-# Analysis and solution files (keep only essential ones)
-*ANALYSIS*.md
-*SOLUTION*.md
-!FINAL_SOLUTION.md
-
 # Flow files (keep only main ones)
 test-*.json
 *-flow.json
@@ -104,6 +99,9 @@ build/Release/
 tmp/
 temp/
 
+# Temporary edu-nodered folder
+edu-nodered-src/
+
 # Runtime data
 pids/
 *.pid
@@ -121,13 +119,3 @@ typings/
 # Lock files (uncomment if you want to ignore them)
 # package-lock.json
 # yarn.lock
-FINAL_SOLUTION.md
-API_CENTRALIZATION_COMPLETE.md
-CANCEL_TASK_FIXES.md
-PHASE_1_COMPLETE.md
-PHASE_2_COMPLETE.md
-PHASE_3_COMPLETE.md
-PHASE_4_COMPLETE.md
-PHASE_5_COMPLETE.md
-REFACTORING_COMPLETE.md
-RMF_REFACTORING_PLAN.md

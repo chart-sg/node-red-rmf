@@ -1,8 +1,32 @@
 // File: nodes/lib/rmfTaskManager.js
 const { context, rmfEvents } = require('./rmfCore');
 
+// Import ROS2 bridge interface to get the correct node ID
+let ros2BridgeInterface = null;
+try {
+  const { getROS2BridgeInterface } = require('./ros2-bridge-interface');
+  ros2BridgeInterface = getROS2BridgeInterface();
+} catch (error) {
+  console.error('RMF: Failed to import ros2-bridge-interface in rmfTaskManager:', error.message);
+}
+
 // Robot context provider - will be set by the context manager
 let robotContextProvider = null;
+
+/**
+ * Get the correct ROS2 node ID from the bridge interface
+ * @returns {string} The actual node ID created by the bridge
+ */
+function getROS2NodeId() {
+  if (ros2BridgeInterface) {
+    const status = ros2BridgeInterface.getStatus();
+    if (status.nodeId) {
+      return status.nodeId;
+    }
+  }
+  // Fallback to the expected name if bridge interface is not available
+  return 'rmf_integration_node';
+}
 
 /**
  * Set the robot context provider (called by context manager)
@@ -444,17 +468,23 @@ async function sendDynamicEventGoal(goalData, callbacks = {}) {
       console.log(`RMF: Marked ${robotKey} as having active end event`);
     }
     console.log('RMF: Using safe action client wrapper...');
-    const { Ros2Instance } = require('./rmf-ros2-instance');
     const { SafeActionClient } = require('./rmf-safe-action-client');
     const actionPath = `/rmf/dynamic_event/command/${goalData.robot_fleet}/${goalData.robot_name}`;
     console.log('RMF: Using action server path:', actionPath);
+    
+    // Get the correct node ID from the bridge interface
+    const nodeId = getROS2NodeId();
+    console.log(`RMF: Using node ID: ${nodeId}`);
+    
+    // Create action client with bridge-managed persistent pattern
     safeActionClient = new SafeActionClient(
-      Ros2Instance.instance().node,
+      nodeId, // Use the actual node ID from bridge
       'rmf_task_msgs/action/DynamicEvent',
       actionPath
     );
     await safeActionClient.initialize();
     console.log('RMF: Safe action client initialized');
+    
     if (!safeActionClient.isActionServerAvailable()) {
       console.log('RMF: Action server not available, cleaning up and returning error');
       safeActionClient.destroy();
@@ -561,8 +591,11 @@ async function sendDynamicEventGoal(goalData, callbacks = {}) {
     
     console.log('RMF: Goal was accepted');
     
-    // Wait for the result
+    // Wait for the result (no timeout - robots can take time to move)
+    console.log('RMF: Waiting for action result...');
     const result = await goalHandle.getResult();
+    console.log('RMF: Action result received:', result);
+    
     let success = false;
     let status = 'unknown';
     

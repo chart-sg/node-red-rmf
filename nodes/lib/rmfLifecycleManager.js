@@ -112,9 +112,12 @@ async function initialize(config = {}) {
       console.log(`RMF Lifecycle: Set ROS domain ID to ${config.domainId}`);
     }
     
-    // Step 2: Initialize core ROS2 connection
-    console.log('RMF Lifecycle: Initializing ROS2 connection...');
-    await rmfConnection.initROS2();
+    // Step 2: Initialize core ROS2 connection using shared manager
+    console.log('RMF Lifecycle: Initializing ROS2 connection with shared manager...');
+    await rmfConnection.initROS2({
+      domainId: config.domainId || 0,
+      args: config.rosArgs || []
+    });
     lifecycleState.initializationOrder.push('ros2Connection');
     
     // Step 3: Initialize data processor (needed by robot manager)
@@ -233,55 +236,22 @@ async function cleanup() {
   }
   
   try {
-    // Step 6: Clean up ROS2 singleton instance
-    console.log('RMF Lifecycle: Cleaning up ROS2 singleton...');
-    const { Ros2Instance } = require('./rmf-ros2-instance');
-    if (Ros2Instance && typeof Ros2Instance.cleanup === 'function') {
-      Ros2Instance.cleanup();
-    }
-    console.log('RMF Lifecycle: ROS2 singleton cleaned up');
+    // Step 6: Clean up ROS2 compatibility manager
+    console.log('RMF Lifecycle: Cleaning up ROS2 compatibility...');
+    const { compatibilityManager } = require('./rmfRos2Compatibility');
+    compatibilityManager.cleanup();
+    console.log('RMF Lifecycle: ROS2 compatibility cleaned up');
   } catch (error) {
-    console.error('RMF Lifecycle: ROS2 singleton cleanup failed:', error);
+    console.error('RMF Lifecycle: ROS2 compatibility cleanup failed:', error);
   }
   
   try {
-    // Step 7: Clean up legacy ROS resources
-    console.log('RMF Lifecycle: Cleaning up legacy ROS resources...');
-    const { context } = rmfCore;
-    
-    if (context.node) {
-      if (context.node.spinning && typeof context.node.stop === 'function') {
-        try { context.node.stop(); } catch (e) { /* ignore */ }
-      }
-      
-      if (context.subscribers) {
-        Object.values(context.subscribers).forEach(sub => {
-          if (sub && typeof sub.destroy === 'function' && (!sub.isDestroyed || !sub.isDestroyed())) {
-            try { sub.destroy(); } catch (error) { console.warn('Error destroying subscription:', error.message); }
-          }
-        });
-        context.subscribers = {};
-      }
-      
-      if (typeof context.node.destroy === 'function') {
-        try { context.node.destroy(); } catch (e) { /* ignore */ }
-      }
-      context.node = null;
-      
-      if (context.rosInitialized) {
-        context.rosInitialized = false;
-      }
-      
-      // Update global ROS state
-      const { globalRosState } = rmfCore;
-      globalRosState.isInitialized = false;
-      globalRosState.isInitializing = false;
-      globalRosState.initPromise = null;
-      globalRosState.error = null;
-    }
-    console.log('RMF Lifecycle: Legacy ROS resources cleaned up');
+    // Step 7: Clean up ROS2 connection using shared manager
+    console.log('RMF Lifecycle: Cleaning up ROS2 connection with shared manager...');
+    await rmfConnection.cleanupROS2();
+    console.log('RMF Lifecycle: ROS2 connection cleaned up');
   } catch (error) {
-    console.error('RMF Lifecycle: Legacy ROS cleanup failed:', error);
+    console.error('RMF Lifecycle: ROS2 connection cleanup failed:', error);
   }
   
   try {
@@ -321,29 +291,43 @@ async function cleanup() {
 
 /**
  * Soft cleanup that preserves data during redeployment
+ * Preserves socket connection AND ROS2 node references to prevent connectivity issues
  * @returns {Promise<void>}
  */
 async function softCleanup() {
-  console.log('RMF Lifecycle: Starting soft cleanup (preserving data)...');
+  console.log('RMF Lifecycle: Starting soft cleanup (preserving data, socket, and ROS2 state)...');
   
   try {
-    // Clean up subscriptions
+    // Clean up subscriptions only
     if (lifecycleState.subscriptionsManager) {
+      console.log('RMF Lifecycle: Cleaning up subscriptions during soft cleanup...');
       lifecycleState.subscriptionsManager.cleanup();
       lifecycleState.subscriptionsManager = null;
     }
     
-    // Clean up socket connection
-    const { context } = rmfCore;
-    if (context.socket) {
-      context.socket.disconnect();
-      context.socket = null;
+    // Soft cleanup ROS2 connection (preserves node and state)
+    try {
+      console.log('RMF Lifecycle: Performing soft ROS2 cleanup...');
+      await rmfConnection.softCleanupROS2();
+      console.log('RMF Lifecycle: Soft ROS2 cleanup completed');
+    } catch (error) {
+      console.error('RMF Lifecycle: Soft ROS2 cleanup failed:', error);
     }
     
-    // Reset initialization flags but preserve data
+    // NOTE: Socket connection is preserved during redeployment to avoid
+    // brief "RMF disconnected" status. Socket is only disconnected during
+    // full cleanup (when nodes are actually removed).
+    console.log('RMF Lifecycle: Socket connection preserved during redeployment');
+    
+    // NOTE: ROS2 state is also preserved during redeployment to avoid
+    // "RMF ROS2 node not available" errors. The shared manager keeps the
+    // node alive, and we need to keep our local references intact.
+    console.log('RMF Lifecycle: ROS2 state preserved during redeployment');
+    
+    // Reset initialization flags but preserve data, socket, and ROS2 state
     lifecycleState.isInitializing = false;
     
-    console.log('RMF Lifecycle: Soft cleanup completed (data preserved)');
+    console.log('RMF Lifecycle: Soft cleanup completed (data, socket, and ROS2 state preserved)');
   } catch (error) {
     console.error('RMF Lifecycle: Soft cleanup failed:', error);
   }

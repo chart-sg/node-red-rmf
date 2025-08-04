@@ -1,7 +1,7 @@
 {
-  "name": "node-red-rmf",
+  "name": "@chart/node-red-rmf",
   "version": "1.0.0",
-  "description": "CHART's Node-RED RMF Nodes",
+  "description": "CHART's Node-RED RMF Integration Nodes - Robot Mission Framework support for Node-RED",
   "license": "ISC",
   "author": "CHART",
   "type": "commonjs",
@@ -9,9 +9,13 @@
   "keywords": [
     "node-red",
     "rmf",
-    "chart"
+    "chart",
+    "robotics",
+    "fleet-management",
+    "ros2"
   ],
   "dependencies": {
+    "@chart/node-red-ros2-manager": "^1.0.0",
     "axios": "^1.10.0",
     "rclnodejs": "^1.4.0",
     "socket.io-client": "^4.0.0"

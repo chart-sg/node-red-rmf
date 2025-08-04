@@ -1,22 +1,54 @@
 // File: nodes/lib/rmf-safe-service-client.js
-const { Ros2Instance } = require('./rmf-ros2-instance');
+
+// Import bridge interface for ROS2 node access
+const { getROS2BridgeInterface } = require('./ros2-bridge-interface');
 
 /**
- * Safe service client wrapper that creates and destroys clients per use
- * This follows the same pattern as the action client to prevent crashes
+ * Safe service client wrapper that creates and destroys clients per use and uses bridge manager
  */
 class SafeServiceClient {
   constructor(serviceType, serviceName) {
     this.serviceType = serviceType;
     this.serviceName = serviceName;
-    this.ros2Instance = Ros2Instance.instance();
   }
 
   async callService(request) {
     console.log(`RMF: Creating service client for ${this.serviceName}...`);
     
+    let node = null;
+    
+    // Use bridge to get ROS2 node
+    console.log('RMF: Getting ROS2 node from bridge for service client...');
+    
+    try {
+      // Get bridge interface and node
+      const bridgeInterface = getROS2BridgeInterface();
+      if (!bridgeInterface || !bridgeInterface.initialized) {
+        throw new Error('Bridge interface not available or not initialized');
+      }
+      
+      // Get node from bridge interface
+      node = bridgeInterface.getNode();
+      console.log('RMF: Node from bridge:', !!node);
+    } catch (error) {
+      console.error('RMF: Error getting node from bridge:', error.message);
+    }    if (!node) {
+      console.error('RMF: No ROS2 node available from any source!');
+      console.error('RMF: This usually means ROS2 initialization is not complete yet');
+      throw new Error('RMF ROS2 node not available. Ensure RMF is initialized first.');
+    }
+    
+    // Validate that the node is actually a valid ROS2 node
+    if (!node.createClient || typeof node.createClient !== 'function') {
+      console.error('RMF: Node object is invalid - missing createClient method');
+      console.error('RMF: Node object keys:', Object.keys(node || {}));
+      throw new Error('RMF ROS2 node is invalid or corrupted');
+    }
+    
+    console.log(`RMF: Using node for service client: ${this.serviceName}`);
+    
     // Create client for this specific call
-    const client = this.ros2Instance.node.createClient(
+    const client = node.createClient(
       this.serviceType,
       this.serviceName
     );
@@ -37,7 +69,7 @@ class SafeServiceClient {
       const serviceName = this.serviceName;
       const servicePromise = new Promise((resolve, reject) => {
         try {
-          client.sendRequest(request, function(response) {
+          client.sendRequest(request, (response) => {
             console.log(`RMF: Service ${serviceName} callback received response`);
             resolve(response);
           });
@@ -64,8 +96,11 @@ class SafeServiceClient {
       // Clean up client immediately after use
       console.log(`RMF: Destroying service client for ${this.serviceName}...`);
       try {
-        if (client && client.destroy) {
+        if (client && typeof client.destroy === 'function') {
           client.destroy();
+          console.log(`RMF: Service client for ${this.serviceName} destroyed successfully`);
+        } else {
+          console.log(`RMF: Service client for ${this.serviceName} already destroyed or invalid`);
         }
       } catch (error) {
         console.error(`RMF: Error destroying service client for ${this.serviceName}:`, error.message);

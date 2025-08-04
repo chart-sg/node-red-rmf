@@ -2,6 +2,17 @@
 const io = require('socket.io-client');
 const { context, globalRosState, rmfEvents, updateGlobalContext } = require('./rmfCore');
 
+// Use the new ROS2 bridge interface
+console.log('RMF: Attempting to import ros2-bridge-interface...');
+let ros2BridgeInterface;
+try {
+  const { getROS2BridgeInterface } = require('./ros2-bridge-interface');
+  ros2BridgeInterface = getROS2BridgeInterface();
+  console.log('RMF: Successfully imported ROS2 bridge interface');
+} catch (error) {
+  console.error('RMF: Failed to import ros2-bridge-interface:', error.message);
+}
+
 // Initialize the ROS initializer and subscriptions manager references
 let rosInitializer = null;
 let subscriptionsManager = null;
@@ -25,69 +36,317 @@ function debugROS2Node() {
 }
 
 /**
- * Initialize ROS2 connection and subscriptions
+ * Initialize ROS2 connection using bridge interface
+ * @param {Object} options - Initialization options
  * @returns {Promise<void>}
  */
-async function initROS2() {
-  try {
-    console.log('RMF: Initializing ROS2 with edu-pattern...');
+async function initROS2(options = {}) {
+  // Check if already initialized using bridge interface
+  if (ros2BridgeInterface && ros2BridgeInterface.getStatus().initialized) {
+    console.log('RMF: Bridge interface already initialized, syncing global state...');
     
-    // Use the edu-pattern singleton ROS2 node
-    const { Ros2Instance } = require('./rmf-ros2-instance');
-    const ros2Instance = Ros2Instance.instance();
+    // Sync global state with bridge interface
+    const node = ros2BridgeInterface.getNode();
+    if (node) {
+      context.node = node;
+      context.rosInitialized = true;
+      globalRosState.isInitialized = true;
+      globalRosState.isInitializing = false;
+      
+      console.log('RMF: State synchronized with existing bridge interface');
+      return;
+    }
+  }
+  
+  // Prevent multiple simultaneous initializations
+  if (globalRosState.isInitializing) {
+    console.log('RMF: ROS2 initialization already in progress, waiting...');
+    if (globalRosState.initPromise) {
+      await globalRosState.initPromise;
+      return;
+    }
+  }
+
+  if (globalRosState.isInitialized) {
+    console.log('RMF: ROS2 already initialized');
+    return;
+  }
+
+  // Set initialization state
+  globalRosState.isInitializing = true;
+  globalRosState.error = null;
+
+  // Create initialization promise
+  globalRosState.initPromise = (async () => {
+    try {
+      console.log('RMF: Starting ROS2 initialization using bridge interface...');
+
+      // Check if bridge interface is available
+      if (!ros2BridgeInterface) {
+        throw new Error('ROS2 bridge interface is not available');
+      }
+
+      // Set domain
+      const domain = options.domainId || process.env.ROS_DOMAIN_ID || process.env.RCLNODEJS_ROS_DOMAIN_ID || 42;
+      console.log(`RMF: Initializing with domain ${domain}`);
+      
+      // Initialize using bridge interface
+      await ros2BridgeInterface.initialize({ domainId: domain });
+      
+            // Get the ROS2 node and nodeId from the bridge
+      context.node = ros2BridgeInterface.getNode();
+      context.nodeId = ros2BridgeInterface.nodeId; // Store nodeId for action clients
+      
+      if (!context.node) {
+        throw new Error('Failed to get ROS2 node from bridge interface');
+      }
+
+      console.log('RMF: ROS2 node created via bridge interface');
+      
+      // Update global state
+      context.rosInitialized = true;
+      globalRosState.isInitialized = true;
+      globalRosState.isInitializing = false;
+      globalRosState.initPromise = null;
+      
+      // Debug node capabilities
+      debugROS2Node();
+      
+      // Update global context
+      updateGlobalContext();
+      
+      console.log('RMF: ROS2 initialization complete');
+      rmfEvents.emit('ros2-initialized');
+
+    } catch (error) {
+      console.error('RMF: ROS2 initialization failed:', error);
+      globalRosState.error = error;
+      globalRosState.isInitializing = false;
+      globalRosState.initPromise = null;
+      rmfEvents.emit('error', error);
+      throw error;
+    }
+  })();
+
+}
+
+/**
+ * Initialize ROS2 connection using bridge interface
+ * @param {Object} options - Initialization options
+ * @returns {Promise<void>}
+ */
+async function initROS2(options = {}) {
+  // Check if already initialized using bridge interface
+  if (ros2BridgeInterface && ros2BridgeInterface.getStatus().initialized) {
+    console.log('RMF: Bridge interface already initialized, syncing global state...');
     
-    // Use the edu-pattern node for context
-    context.node = ros2Instance.node;
-    context.rosInitialized = true;
-    globalRosState.isInitialized = true;
-    console.log('RMF: Using edu-pattern ROS2 node for subscriptions');
-    
-    // If ROS initialized successfully, setup subscriptions
-    if (context.rosInitialized && context.node) {
+    // Sync global state with bridge interface
+    const node = ros2BridgeInterface.getNode();
+    if (node) {
+      context.node = node;
+      context.rosInitialized = true;
+      globalRosState.isInitialized = true;
+      globalRosState.isInitializing = false;
+      
+      console.log('RMF: State synchronized with existing bridge interface');
+      return;
+    }
+  }
+  
+  // Prevent multiple simultaneous initializations
+  if (globalRosState.isInitializing) {
+    console.log('RMF: ROS2 initialization already in progress, waiting...');
+    if (globalRosState.initPromise) {
+      await globalRosState.initPromise;
+      return;
+    }
+  }
+
+  if (globalRosState.isInitialized) {
+    console.log('RMF: ROS2 already initialized');
+    return;
+  }
+
+  // Set initialization state
+  globalRosState.isInitializing = true;
+  globalRosState.error = null;
+
+  // Create initialization promise
+  globalRosState.initPromise = (async () => {
+    try {
+      console.log('RMF: Starting ROS2 initialization using bridge interface...');
+
+      // Check if bridge interface is available
+      if (!ros2BridgeInterface) {
+        throw new Error('ROS2 bridge interface is not available');
+      }
+
+      // Set domain
+      const domain = options.domainId || process.env.ROS_DOMAIN_ID || process.env.RCLNODEJS_ROS_DOMAIN_ID || 42;
+      console.log(`RMF: Initializing with domain ${domain}`);
+      
+      // Initialize using bridge interface
+      await ros2BridgeInterface.initialize({ domainId: domain });
+      
+      // Get the ROS2 node and nodeId from the bridge
+      context.node = ros2BridgeInterface.getNode();
+      context.nodeId = ros2BridgeInterface.nodeId; // Store nodeId for action clients
+      
+      if (!context.node) {
+        throw new Error('Failed to get ROS2 node from bridge interface');
+      }
+
+      console.log('RMF: ROS2 node created via bridge interface');
+      
+      // Update global state
+      context.rosInitialized = true;
+      globalRosState.isInitialized = true;
+      globalRosState.isInitializing = false;
+      globalRosState.initPromise = null;
+      
+      // Debug node capabilities
+      debugROS2Node();
+
       // Initialize subscriptions manager
-      if (!subscriptionsManager) {
+      try {
         const RMFSubscriptions = require('./rmfSubscriptions');
         subscriptionsManager = new RMFSubscriptions(context.node, context, updateGlobalContext);
-      }
-      
-      // Setup all RMF subscriptions
-      await subscriptionsManager.setupAllSubscriptions();
-      
-      // Optionally disable high-frequency logging to reduce console spam
-      if (process.env.RMF_QUIET_LOGGING === 'true') {
-        subscriptionsManager.disableHighFrequencyLogging();
-      }
-      
-      // Defensive: Only get subscribers if method exists and not null
-      if (subscriptionsManager && typeof subscriptionsManager.getSubscribers === 'function') {
-        const subs = subscriptionsManager.getSubscribers();
-        if (subs) {
-          context.subscribers = subs;
+        
+        // Setup all RMF subscriptions
+        await subscriptionsManager.setupAllSubscriptions();
+        
+        // Optionally disable high-frequency logging
+        if (process.env.RMF_QUIET_LOGGING === 'true') {
+          subscriptionsManager.disableHighFrequencyLogging();
+        }
+        
+        // Get subscribers
+        if (subscriptionsManager && typeof subscriptionsManager.getSubscribers === 'function') {
+          const subs = subscriptionsManager.getSubscribers();
+          context.subscribers = subs || {};
         } else {
           context.subscribers = {};
         }
-      } else {
-        context.subscribers = {};
+        
+        // Fetch building map from service
+        if (subscriptionsManager && typeof subscriptionsManager.requestBuildingMapFromService === 'function') {
+          const success = await subscriptionsManager.requestBuildingMapFromService();
+          if (success && context.latestMessages && context.latestMessages.buildingMap) {
+            context.buildingMap = context.latestMessages.buildingMap;
+          }
+        }
+        
+      } catch (error) {
+        console.warn('RMF: Failed to initialize subscriptions:', error.message);
+        // Continue without subscriptions - they're not critical for basic operation
       }
       
-      // Fetch building map from service and update context
-      if (subscriptionsManager && typeof subscriptionsManager.requestBuildingMapFromService === 'function') {
-        const success = await subscriptionsManager.requestBuildingMapFromService();
-        if (success && context.latestMessages && context.latestMessages.buildingMap) {
-          context.buildingMap = context.latestMessages.buildingMap;
-        }
-      } else {
-        console.warn('RMF: subscriptionsManager is null or does not have requestBuildingMapFromService after deploy. Skipping building map request.');
+      // Update global context
+      updateGlobalContext();
+      
+      console.log('RMF: ROS2 initialization complete via bridge interface');
+      
+      // Emit successful initialization
+      rmfEvents.emit('ros2_initialized', {
+        node: context.node,
+        message: 'RMF ROS2 initialized successfully using bridge interface'
+      });
+      
+      rmfEvents.emit('ready');
+
+    } catch (error) {
+      console.error('RMF: ROS2 initialization failed:', error);
+      globalRosState.error = error;
+      globalRosState.isInitializing = false;
+      globalRosState.initPromise = null;
+      rmfEvents.emit('error', error);
+      throw error;
+    }
+  })();
+
+  return globalRosState.initPromise;
+}
+
+/**
+ * Cleanup ROS2 resources using bridge interface
+ */
+async function cleanupROS2() {
+  try {
+    console.log('RMF: Starting ROS2 cleanup...');
+    
+    // Clean up subscriptions manager first
+    if (subscriptionsManager) {
+      try {
+        await subscriptionsManager.cleanup();
+        subscriptionsManager = null;
+        console.log('RMF: Subscriptions manager cleaned up');
+      } catch (error) {
+        console.warn('RMF: Error cleaning up subscriptions manager:', error);
       }
     }
     
-    // Emit ready event after successful ROS2 and subscriptions init
-    rmfEvents.emit('ready');
+    // Clear local references (bridge interface manages the actual ROS2 resources)
+    if (context.node) {
+      console.log('RMF: Clearing local node context reference...');
+      context.node = null;
+    }
     
+    // Reset local state
+    context.rosInitialized = false;
+    globalRosState.isInitialized = false;
+    globalRosState.isInitializing = false;
+    globalRosState.initPromise = null;
+    
+    console.log('RMF: ROS2 local cleanup completed (bridge interface preserved for reuse)');
   } catch (error) {
-    console.error('RMF: Failed to initialize ROS 2 and subscriptions:', error.message);
-    rmfEvents.emit('error', error);
-    throw error;
+    console.error('RMF: Error during ROS2 cleanup:', error.message);
+  }
+}
+
+/**
+ * Full cleanup that shuts down bridge interface (use only on final shutdown)
+ */
+async function fullCleanupROS2() {
+  try {
+    // First do local cleanup
+    await cleanupROS2();
+    
+    // Then shutdown bridge interface if available
+    if (ros2BridgeInterface) {
+      console.log('RMF: Performing full cleanup - shutting down bridge interface...');
+      await ros2BridgeInterface.shutdown();
+      console.log('RMF: Bridge interface shutdown completed');
+    }
+    
+    console.log('RMF: Full ROS2 cleanup completed');
+  } catch (error) {
+    console.error('RMF: Error during full ROS2 cleanup:', error.message);
+  }
+}
+
+/**
+ * Soft cleanup for redeployment that preserves ROS2 node and state
+ */
+async function softCleanupROS2() {
+  try {
+    console.log('RMF Connection: Starting soft ROS2 cleanup (preserving node and state)...');
+    
+    // Only clean up subscriptions manager, but preserve ROS2 node and state
+    if (subscriptionsManager) {
+      console.log('RMF Connection: Cleaning up subscriptions manager during soft cleanup...');
+      if (typeof subscriptionsManager.cleanup === 'function') {
+        await subscriptionsManager.cleanup();
+      }
+      subscriptionsManager = null;
+    }
+    
+    // NOTE: We explicitly DO NOT clear context.node or reset globalRosState 
+    // flags during soft cleanup to prevent initialization errors after redeployment.
+    // The bridge interface keeps the node alive and we keep our references.
+    
+    console.log('RMF Connection: Soft ROS2 cleanup completed (node and state preserved)');
+  } catch (error) {
+    console.error('RMF Connection: Error during soft ROS2 cleanup:', error.message);
   }
 }
 
@@ -260,5 +519,10 @@ module.exports = {
   // Manager access
   getManagers,
   setSubscriptionsManager,
-  setRosInitializer
+  setRosInitializer,
+
+  // Cleanup
+  cleanupROS2,
+  fullCleanupROS2,
+  softCleanupROS2
 };
