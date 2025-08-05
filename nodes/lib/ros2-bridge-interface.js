@@ -70,7 +70,7 @@ class ROS2BridgeInterface {
                 await bridge.initializeROS2({ domain: this.domain });
                 
                 // Create a node for RMF operations
-                const result = await bridge.createNode('rmf_integration_node');
+                const result = await bridge.createNode('node_red_rmf_manager');
                 this.nodeId = result.nodeId;
                 this.node = result.node;
                 
@@ -83,7 +83,7 @@ class ROS2BridgeInterface {
                 
                 // Initialize rclnodejs directly
                 await rclnodejs.init();
-                this.node = rclnodejs.createNode('rmf_integration_node');
+                this.node = rclnodejs.createNode('node_red_rmf_manager');
                 this.fallbackContext = { spinning: false };
                 
                 // Start spinning for fallback mode using per-node approach

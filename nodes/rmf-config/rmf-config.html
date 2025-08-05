@@ -4,13 +4,10 @@
     color: '#C0DEED',
     defaults: {
       name: { value: '' },
+      ros2_config: { type: 'ros2-config', required: true },
       host: { value: '', required: true },
       port: { value: '', required: true },
-      jwt: { value: '', required: true },
-      rosDomain: { value: '0', required: true },
-      initializationDelay: { value: '3000', required: true },
-      maxRetries: { value: '3', required: true },
-      skipDelayIfNotInitialized: { value: true }
+      jwt: { value: '', required: true }
     },
     inputs: 0,
     outputs: 0,
@@ -42,32 +39,20 @@
     <input type="text" id="node-config-input-jwt" />
   </div>
   <div class="form-row">
-    <label for="node-config-input-rosDomain">ROS 2 Domain ID</label>
-    <input type="text" id="node-config-input-rosDomain" />
-  </div>
-  <div class="form-row">
-    <label for="node-config-input-initializationDelay">Initialization Delay (ms)</label>
-    <input type="text" id="node-config-input-initializationDelay" />
-    <div class="form-tips">Delay before ROS2 initialization to avoid conflicts with other ROS2 systems (e.g., edu-nodered-ros2-plugin)</div>
-  </div>
-  <div class="form-row">
-    <label for="node-config-input-maxRetries">Max Initialization Retries</label>
-    <input type="text" id="node-config-input-maxRetries" />
-  </div>
-  <div class="form-row">
-    <input type="checkbox" id="node-config-input-skipDelayIfNotInitialized" style="display: inline-block; width: auto; vertical-align: top;">
-    <label for="node-config-input-skipDelayIfNotInitialized" style="width: 70%;">Skip delay if ROS2 not already initialized</label>
-    <div class="form-tips">If checked, skips the initialization delay when no other ROS2 system is detected</div>
+    <label for="node-config-input-ros2_config">ROS2 Config</label>
+    <input type="text" id="node-config-input-ros2_config" />
+    <div class="form-tips">Global ROS2 configuration (domain, namespace) shared across all ROS2 operations</div>
   </div>
 </script>
 
 <script type="text/html" data-help-name="rmf-config">
-  <p>Configure connection settings for RMF Web API and ROS 2 Domain.</p>
-  <h3>ROS2 Conflict Prevention</h3>
-  <p>The initialization delay helps prevent conflicts with other ROS2 systems like edu-nodered-ros2-plugin. If you experience ROS2 initialization errors, try:</p>
+  <p>Configure connection settings for RMF Web API and ROS2 settings via ros2-config.</p>
+  <h3>Configuration</h3>
   <ul>
-    <li>Increase the initialization delay (e.g., 5000ms)</li>
-    <li>Use a different ROS Domain ID (e.g., 42 for RMF)</li>
-    <li>Disable conflicting ROS2 nodes</li>
+    <li><strong>ROS2 Config:</strong> Reference to global ros2-config node for domain and namespace</li>
+    <li><strong>RMF Host/Port:</strong> RMF Web API server connection details</li>
+    <li><strong>JWT Token:</strong> Authentication token for RMF Web API</li>
   </ul>
+  <h3>ROS2 Integration</h3>
+  <p>This node references a ros2-config node which provides consistent domain and namespace settings for all ROS2 operations, eliminating conflicts between different packages.</p>
 </script>

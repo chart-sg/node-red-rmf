@@ -15,9 +15,21 @@ module.exports = function (RED) {
     this.host = config.host;
     this.port = config.port;
     this.jwt = config.jwt;
-    this.rosDomain = config.rosDomain; // Default RMF to domain 42
-    this.initializationDelay = parseInt(config.initializationDelay) || 0; // No delay needed with shared manager
-    this.maxRetries = parseInt(config.maxRetries) || 3;
+    
+    // Get ROS2 settings from ros2-config
+    if (config.ros2_config) {
+      const ros2Config = RED.nodes.getNode(config.ros2_config);
+      if (!ros2Config) {
+        this.error("ros2-config is required but not found");
+        return;
+      }
+      this.rosDomain = ros2Config.domain || 0;
+      this.namespace = ros2Config.namespace || '';
+      console.log(`RMF Config: Using ROS domain ${this.rosDomain} from ros2-config`);
+    } else {
+      this.error("ros2-config is required");
+      return;
+    }
 
     console.log(`RMF Config: Using ROS domain ID ${this.rosDomain} with shared manager`);
 

@@ -25,7 +25,7 @@ function getROS2NodeId() {
     }
   }
   // Fallback to the expected name if bridge interface is not available
-  return 'rmf_integration_node';
+  return 'node_red_rmf_manager';
 }
 
 /**
