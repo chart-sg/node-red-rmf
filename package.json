@@ -1,14 +1,32 @@
 {
   "name": "@chart/node-red-rmf",
   "version": "1.0.0",
-  "description": "CHART's Node-RED RMF Integration Nodes - Robot Mission Framework support for Node-RED",
+  "description": "RMF (Robot Middleware Framework) nodes for Node-RED with SharedManager architecture.",
   "license": "ISC",
-  "author": "CHART",
+  "author": {
+    "name": "CHART",
+    "url": "https://github.com/chart-sg"
+  },
   "type": "commonjs",
   "main": "index.js",
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "os": [
+    "!win32"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chart-sg/node-red-rmf.git"
+  },
+  "bugs": {
+    "url": "https://github.com/chart-sg/node-red-rmf/issues"
+  },
+  "homepage": "https://github.com/chart-sg/node-red-rmf#readme",
   "keywords": [
     "node-red",
     "rmf",
+    "robot-middleware-framework",
     "chart",
     "robotics",
     "fleet-management",
@@ -32,8 +50,10 @@
     }
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "echo \"No tests yet\" && exit 0",
+    "lint": "echo \"No linting yet\" && exit 0", 
     "validate": "node scripts/validate-subflows.js",
-    "add-subflow": "node scripts/add-subflow.js"
+    "add-subflow": "node scripts/add-subflow.js",
+    "prepublishOnly": "npm run test && npm run lint && npm run validate"
   }
 }
