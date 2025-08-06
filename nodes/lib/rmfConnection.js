@@ -228,13 +228,8 @@ async function initROS2(options = {}) {
           context.subscribers = {};
         }
         
-        // Fetch building map from service
-        if (subscriptionsManager && typeof subscriptionsManager.requestBuildingMapFromService === 'function') {
-          const success = await subscriptionsManager.requestBuildingMapFromService();
-          if (success && context.latestMessages && context.latestMessages.buildingMap) {
-            context.buildingMap = context.latestMessages.buildingMap;
-          }
-        }
+        // Building map already fetched during subscription setup - no need to duplicate
+        // The subscriptionsManager.requestBuildingMapFromService() handles caching internally
         
       } catch (error) {
         console.warn('RMF: Failed to initialize subscriptions:', error.message);

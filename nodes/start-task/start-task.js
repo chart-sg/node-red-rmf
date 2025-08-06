@@ -19,6 +19,9 @@ module.exports = function (RED) {
       node.status({ fill: fill, shape: shape, text: text });
     }
     
+    // Initialize with waiting status
+    setStatus('yellow', 'ring', 'Waiting for RMF config...');
+    
     function updateRMFStatus() {
       try {
         if (!rmfContextManager || !rmfContextManager.context) {
@@ -47,25 +50,39 @@ module.exports = function (RED) {
       }
     }
 
-    // Listen for RMF context events
+    // Wait for RMF config to be ready
+    let rmfConfigReady = false;
+    if (node.configNode) {
+      node.configNode.on('rmf-ready', (readyInfo) => {
+        console.log('[START-TASK] RMF config ready, checking connection...');
+        rmfConfigReady = true;
+        setStatus('yellow', 'ring', 'Connecting to RMF...');
+        // Small delay to allow RMF context to fully initialize
+        setTimeout(updateRMFStatus, 1000);
+      });
+    }
+
+    // Listen for RMF context events - but only after config is ready
     function onReady() {
-      updateRMFStatus();
+      if (rmfConfigReady) updateRMFStatus();
     }
     function onSocketConnected() {
-      updateRMFStatus();
+      if (rmfConfigReady) updateRMFStatus();
     }
     function onSocketDisconnected() {
-      setStatus('red', 'ring', 'RMF disconnected');
+      if (rmfConfigReady) setStatus('red', 'ring', 'RMF disconnected');
     }
     function onCleanedUp() {
-      setStatus('red', 'ring', 'RMF cleaned up');
+      if (rmfConfigReady) setStatus('red', 'ring', 'RMF cleaned up');
     }
     function onError(err) {
-      setStatus('red', 'ring', 'RMF error: ' + (err && err.message ? err.message : 'unknown'));
+      if (rmfConfigReady) setStatus('red', 'ring', 'RMF error: ' + (err && err.message ? err.message : 'unknown'));
     }
     function onDataUpdated() {
       // Called when RMF data (building map, robots) is updated
-      updateRMFStatus();
+      if (rmfConfigReady) {
+        updateRMFStatus();
+      }
     }
 
     rmfEvents.on('ready', onReady);
@@ -75,8 +92,7 @@ module.exports = function (RED) {
     rmfEvents.on('error', onError);
     rmfEvents.on('data_updated', onDataUpdated); // Listen for data updates
 
-    // Initial status
-    updateRMFStatus();
+    // Don't call updateRMFStatus() immediately - wait for rmf-ready event
 
     // Clear listeners on close
     node.on('close', async (removed, done) => {

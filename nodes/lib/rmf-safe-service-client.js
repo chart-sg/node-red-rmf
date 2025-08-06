@@ -93,17 +93,26 @@ class SafeServiceClient {
       console.error(`RMF: Service ${this.serviceName} call failed:`, error.message);
       throw error;
     } finally {
-      // Clean up client immediately after use
-      console.log(`RMF: Destroying service client for ${this.serviceName}...`);
+            // Clean up client immediately after use
       try {
         if (client && typeof client.destroy === 'function') {
-          client.destroy();
-          console.log(`RMF: Service client for ${this.serviceName} destroyed successfully`);
+          try {
+            client.destroy();
+            console.log(`RMF: Service client for ${this.serviceName} destroyed successfully`);
+          } catch (destroyError) {
+            if (destroyError.message && destroyError.message.includes('already destroyed')) {
+              // This is normal - rclnodejs auto-destroys service clients after successful calls
+              console.debug(`RMF: Service client for ${this.serviceName} was auto-destroyed by rclnodejs (normal behavior)`);
+            } else {
+              console.warn(`RMF: Error destroying service client for ${this.serviceName}:`, destroyError.message);
+            }
+          }
         } else {
-          console.log(`RMF: Service client for ${this.serviceName} already destroyed or invalid`);
+          // This is normal - rclnodejs auto-destroys service clients after successful calls
+          console.debug(`RMF: Service client for ${this.serviceName} was auto-cleaned by rclnodejs (normal behavior)`);
         }
       } catch (error) {
-        console.error(`RMF: Error destroying service client for ${this.serviceName}:`, error.message);
+        console.warn(`RMF: Error in cleanup process for ${this.serviceName}:`, error.message);
       }
     }
   }

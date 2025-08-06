@@ -36,7 +36,7 @@ module.exports = function (RED) {
     // Initialize ROS2 using shared manager
     (async () => {
       try {
-        this.status({ fill: 'yellow', shape: 'dot', text: 'initializing...' });
+        this.status({ fill: 'yellow', shape: 'ring', text: 'initializing ROS2...' });
         
         console.log('RMF Config: Starting RMF initialization with shared ROS2 manager...');
         
@@ -46,14 +46,25 @@ module.exports = function (RED) {
           args: []
         });
         
-        this.status({ fill: 'yellow', shape: 'dot', text: 'connecting socket...' });
+        this.status({ fill: 'yellow', shape: 'ring', text: 'loading building map...' });
         
         // Socket connection is required for task status updates
+        this.status({ fill: 'yellow', shape: 'ring', text: 'connecting to RMF server...' });
         await connectSocket({ host: this.host, port: this.port, jwt: this.jwt });
         setGlobalContext(this.context().global);
         
         this.status({ fill: 'green', shape: 'dot', text: 'connected' });
         console.log('RMF Config: Initialization completed successfully with shared manager');
+        
+        // Emit ready event for RMF task nodes
+        process.nextTick(() => {
+          this.emit('rmf-ready', {
+            domain: this.rosDomain,
+            namespace: this.namespace,
+            host: this.host,
+            port: this.port
+          });
+        });
         
       } catch (err) {
         console.error('RMF Config: Initialization failed:', err.message);

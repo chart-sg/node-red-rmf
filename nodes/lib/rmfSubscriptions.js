@@ -9,6 +9,14 @@ class RMFSubscriptions {
     this.subscribers = {};
     this.serviceClients = {};
     
+    // Building map caching to prevent duplicate requests
+    this.buildingMapCache = {
+      data: null,
+      promise: null,
+      lastRequested: 0,
+      cacheTimeout: 30000 // Cache for 30 seconds
+    };
+    
     // Data processing throttling - limit how often we actually process the data
     this.processThrottling = {
       buildingMap: { lastProcessed: 0, interval: 5000 },  // Process every 5 seconds (reduced from 30s for debugging)
@@ -63,7 +71,7 @@ class RMFSubscriptions {
       // Setup dynamic event subscription to capture dynamic_event_seq
       await this.setupDynamicEventSubscription();
 
-      // Always use service for building map/locations
+      // Always use service for building map/locations - but cache to prevent duplicates
       console.log('RMF: Requesting building map from service (topic subscription removed)...');
       await this.requestBuildingMapFromService();
 
@@ -95,27 +103,63 @@ class RMFSubscriptions {
 
   async requestBuildingMapFromService() {
     try {
-      console.log('RMF: Requesting building map from service using SafeServiceClient...');
-      const { SafeServiceClient } = require('./rmf-safe-service-client');
-      const serviceClient = new SafeServiceClient(
-        'rmf_building_map_msgs/srv/GetBuildingMap',
-        '/get_building_map'
-      );
-      const response = await serviceClient.callService({});
-      if (response && response.building_map) {
-        console.log('RMF: Building map received from service');
-        console.log(`RMF: Building: ${response.building_map.name}`);
-        console.log(`RMF: Levels: ${response.building_map.levels.length}`);
-        // Process the building map data
-        const { processBuildingMapFromService } = require('./rmfDataProcessors');
-        processBuildingMapFromService(response.building_map, this.context, this.updateCallback);
+      const now = Date.now();
+      
+      // Check if we have cached data that's still valid
+      if (this.buildingMapCache.data && 
+          (now - this.buildingMapCache.lastRequested) < this.buildingMapCache.cacheTimeout) {
+        console.log('RMF: Using cached building map data');
         return true;
-      } else {
-        console.error('RMF: Invalid response from building map service');
-        return false;
       }
+      
+      // Check if there's already a request in progress
+      if (this.buildingMapCache.promise) {
+        console.log('RMF: Building map request already in progress, waiting...');
+        return await this.buildingMapCache.promise;
+      }
+      
+      // Create new request promise
+      console.log('RMF: Requesting building map from service using SafeServiceClient...');
+      this.buildingMapCache.promise = this._fetchBuildingMapFromService();
+      
+      try {
+        const result = await this.buildingMapCache.promise;
+        this.buildingMapCache.lastRequested = now;
+        return result;
+      } finally {
+        // Clear the promise regardless of success/failure
+        this.buildingMapCache.promise = null;
+      }
+      
     } catch (error) {
       console.error('RMF: Failed to request building map from service:', error.message);
+      this.buildingMapCache.promise = null;
+      return false;
+    }
+  }
+  
+  async _fetchBuildingMapFromService() {
+    const { SafeServiceClient } = require('./rmf-safe-service-client');
+    const serviceClient = new SafeServiceClient(
+      'rmf_building_map_msgs/srv/GetBuildingMap',
+      '/get_building_map'
+    );
+    
+    const response = await serviceClient.callService({});
+    if (response && response.building_map) {
+      console.log('RMF: Building map received from service');
+      console.log(`RMF: Building: ${response.building_map.name}`);
+      console.log(`RMF: Levels: ${response.building_map.levels.length}`);
+      
+      // Cache the building map data
+      this.buildingMapCache.data = response.building_map;
+      
+      // Process the building map data
+      const { processBuildingMapFromService } = require('./rmfDataProcessors');
+      processBuildingMapFromService(response.building_map, this.context, this.updateCallback);
+      return true;
+    } else {
+      console.error('RMF: Invalid response from building map service');
       return false;
     }
   }
