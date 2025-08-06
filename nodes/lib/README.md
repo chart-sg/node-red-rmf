@@ -1,33 +1,18 @@
 # RMF Node-RED Library Documentation
 
-This directory contains the core library modules for the RMF (Robot Middleware Framework) Node-RED integration. The library is organized in### **Custom ROS2 Operations**: Use SharedManager interface through `rmfConnection.js`
-- **Task Operations**: Use `rmfTaskManager.js` functions via context manager
-- **Robot Data**: Use `rmfRobotManager.js` functions via context manager
+This directory contains the core library modules for the RMF (Robot Middleware Framework) Node-RED integration. The library is organized into modular components that handle different aspects of RMF integration.
 
-### Architecture Principles
-1. **Centralized State**: All state goes through `rmfCore.js`
-2. **Event-Driven**: Use `rmfEvents` for component communication  
-3. **SharedManager Integration**: Use SharedManager for ROS2 operations
-4. **Backward Compatibility**: Legacy components marked but preserved
-5. **Clean Separation**: Each module has a clear, focused responsibility
-
----
-
-*Last Updated: August 4, 2025*  
-*Architecture Version: SharedManager-Based (v3.0)*onents that handle different aspects of RMF integration.
-
-## 📋 File Overview
+## 📋 Files Status
 
 | File | Status | Purpose | Dependencies |
 |------|--------|---------|-------------|
 | **Core Architecture** |
 | `rmfCore.js` | ✅ Active | Central state management, event emitter, and shared context | None |
 | `rmfContextManager.js` | ✅ Active | Main entry point, module orchestration, and API facade | All other modules |
-| `rmfLifecycleManager.js` | ✅ Active | Component initialization and lifecycle orchestration | Core modules, legacy components |
+| `rmfLifecycleManager.js` | ✅ Active | Component initialization and lifecycle orchestration | Core modules |
 | **Connection & Communication** |
 | `rmfConnection.js` | ✅ Active | ROS2 initialization, WebSocket connections, SharedManager integration | `@chart/node-red-ros2-manager` |
 | `ros2-bridge-interface.js` | ✅ Active | Interface layer to ROS2 SharedManager with fallback support | `@chart/node-red-ros2-manager` |
-| `rmf-ros2-instance.js` | ✅ Active | Compatibility wrapper for ROS2 node access via SharedManager | `ros2-bridge-interface.js` |
 | **Action & Service Clients** |
 | `rmf-safe-action-client.js` | ✅ Active | SharedManager-based action client wrapper (eliminates spinning conflicts) | `@chart/node-red-ros2-manager` |
 | `rmf-safe-service-client.js` | ✅ Active | Safe service client wrapper with SharedManager integration | `@chart/node-red-ros2-manager` |
@@ -36,11 +21,8 @@ This directory contains the core library modules for the RMF (Robot Middleware F
 | `rmfRobotManager.js` | ✅ Active | Robot state tracking, fleet management, and robot discovery | `rmfCore.js` |
 | **Data Processing** |
 | `rmfDataProcessor.js` | ✅ Active | Data validation, processing utilities, and subscription management | `rmfCore.js`, `rmfConnection.js` |
-| `rmfDataProcessors.js` | ⚠️ Legacy | Additional data processing utilities (consider consolidation) | Various |
-| **Legacy Components** |
-| `ros2-shared-manager-legacy.js` | ❌ Deprecated | Legacy compatibility stub - use `@chart/node-red-ros2-manager` instead | None |
-| `rmfRosInitializer.js` | ⚠️ Legacy | Legacy ROS2 initialization (SharedManager handles this now) | `rclnodejs` |
-| `rmfSubscriptions.js` | ✅ Core | RMF topic subscription management (fleet, door, lift states) | `rclnodejs` |
+| `rmfMessageTransformers.js` | ✅ Active | ROS2 message transformation to internal context format | None |
+| `rmfSubscriptions.js` | ✅ Active | RMF topic subscription management (fleet, door, lift states) | `rclnodejs` |
 | **Compatibility & Detection** |
 | `rmfRos2Compatibility.js` | ⚠️ Utility | ROS2 compatibility checking and environment detection | `rclnodejs` |
 
@@ -74,6 +56,12 @@ This directory contains the core library modules for the RMF (Robot Middleware F
     │rmfDataProcessor │ │rmfRobotMgr  │ │Action/Service   │
     │   (Data Ops)    │ │(Robot State)│ │   Clients       │
     └─────────────────┘ └─────────────┘ └─────────────────┘
+                              │
+                              ▼
+                    ┌─────────────────┐
+                    │ Message         │
+                    │ Transformers    │
+                    └─────────────────┘
 ```
 
 ## 🔧 Core Components
@@ -128,6 +116,14 @@ The action client architecture was recently updated:
   - Advanced subscription management
   - Error handling and recovery
 
+### **rmfMessageTransformers.js** - Message Transformation
+- **Purpose**: Transform ROS2 message formats to internal context structures
+- **Key Features**:
+  - Building map and navigation graph transformation
+  - Fleet, door, and lift state transformation
+  - Consistent internal data format conversion
+  - Preservation of dynamic event data during transformations
+
 ### **rmfRobotManager.js** - Robot State Management
 - **Purpose**: Robot discovery, state tracking, and fleet management
 - **Key Features**:
@@ -135,16 +131,6 @@ The action client architecture was recently updated:
   - Fleet organization and statistics
   - Robot discovery events
   - Dynamic robot management
-
-## ⚠️ Legacy Components
-
-### **Compatibility Stub Files**
-The following files are kept as minimal stubs for backward compatibility:
-- `ros2-shared-manager-legacy.js` - Stub with deprecation warnings (use `@chart/node-red-ros2-manager`)
-- `rmfRosInitializer.js` - Legacy ROS2 initialization (SharedManager handles this now)
-- `rmfRos2Compatibility.js` - Stub compatibility layer (SharedManager handles compatibility)
-
-**Note**: These files provide minimal functionality to prevent import errors but log deprecation warnings. New code should use the SharedManager-based architecture.
 
 ### **Note on rmfSubscriptions.js**
 - **Status**: ✅ **ACTIVE CORE COMPONENT** (not legacy)
@@ -198,11 +184,10 @@ const robot = rmfContextManager.getRobotsByFleet('fleet_name');
 ### Architecture Principles
 1. **Centralized State**: All state goes through `rmfCore.js`
 2. **Event-Driven**: Use `rmfEvents` for component communication  
-3. **Bridge Integration**: Use bridge for ROS2 operations
-4. **Backward Compatibility**: Legacy components marked but preserved
-5. **Clean Separation**: Each module has a clear, focused responsibility
+3. **SharedManager Integration**: Use SharedManager for ROS2 operations
+4. **Clean Separation**: Each module has a clear, focused responsibility
 
 ---
 
-*Last Updated: July 29, 2025*  
-*Architecture Version: Bridge-Based (v2.0)*
+*Last Updated: August 6, 2025*  
+*Architecture Version: SharedManager-Based (v3.0)*

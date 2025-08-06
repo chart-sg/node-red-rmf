@@ -7,13 +7,11 @@ const rmfTaskManager = require('./rmfTaskManager');
 const rmfDataProcessor = require('./rmfDataProcessor');
 const rmfRobotManager = require('./rmfRobotManager');
 
-// Legacy imports for backward compatibility
-const RMFRosInitializer = require('./rmfRosInitializer');
+// Active imports for SharedManager architecture
 const RMFSubscriptions = require('./rmfSubscriptions');
 
 // State tracking for all managed components
 let lifecycleState = {
-  rosInitializer: null,
   subscriptionsManager: null,
   dataProcessor: null,
   robotManager: null,
@@ -65,22 +63,22 @@ function initializeRobotManager() {
 }
 
 /**
- * Initialize ROS components (ROS initializer and subscriptions)
+ * Initialize ROS components (subscriptions only - ROS2 node handled by SharedManager)
  * @returns {Object} Initialization result
  */
 function initializeRosComponents() {
-  if (!lifecycleState.rosInitializer) {
-    console.log('RMF Lifecycle: Initializing ROS components...');
+  if (!lifecycleState.subscriptionsManager) {
+    console.log('RMF Lifecycle: Initializing ROS subscriptions...');
     
-    lifecycleState.rosInitializer = new RMFRosInitializer();
+    // Note: ROS2 node initialization is handled by SharedManager in rmfConnection
+    // We only initialize the subscriptions manager here
     lifecycleState.subscriptionsManager = new RMFSubscriptions();
     
-    lifecycleState.initializationOrder.push('rosComponents');
-    console.log('RMF: ROS components initialized');
+    lifecycleState.initializationOrder.push('rosSubscriptions');
+    console.log('RMF: ROS subscriptions initialized');
   }
   
   return {
-    rosInitializer: lifecycleState.rosInitializer,
     subscriptionsManager: lifecycleState.subscriptionsManager
   };
 }
@@ -219,24 +217,8 @@ async function cleanup() {
     console.log('RMF Lifecycle: ROS subscriptions cleaned up');
   } catch (error) {
     console.error('RMF Lifecycle: ROS subscription cleanup failed:', error);
-  }
-  
-  try {
-    // Step 5: Clean up ROS initializer
-    console.log('RMF Lifecycle: Cleaning up ROS initializer...');
-    if (lifecycleState.rosInitializer) {
-      if (typeof lifecycleState.rosInitializer.cleanup === 'function') {
-        lifecycleState.rosInitializer.cleanup();
-      }
-      lifecycleState.rosInitializer = null;
-    }
-    console.log('RMF Lifecycle: ROS initializer cleaned up');
-  } catch (error) {
-    console.error('RMF Lifecycle: ROS initializer cleanup failed:', error);
-  }
-  
-  try {
-    // Step 6: Clean up ROS2 compatibility manager
+  }  try {
+    // Step 5: Clean up ROS2 compatibility manager
     console.log('RMF Lifecycle: Cleaning up ROS2 compatibility...');
     const { compatibilityManager } = require('./rmfRos2Compatibility');
     compatibilityManager.cleanup();
@@ -244,18 +226,18 @@ async function cleanup() {
   } catch (error) {
     console.error('RMF Lifecycle: ROS2 compatibility cleanup failed:', error);
   }
-  
+
   try {
-    // Step 7: Clean up ROS2 connection using shared manager
+    // Step 6: Clean up ROS2 connection using shared manager
     console.log('RMF Lifecycle: Cleaning up ROS2 connection with shared manager...');
     await rmfConnection.cleanupROS2();
     console.log('RMF Lifecycle: ROS2 connection cleaned up');
   } catch (error) {
     console.error('RMF Lifecycle: ROS2 connection cleanup failed:', error);
   }
-  
+
   try {
-    // Step 8: Clean up socket connection
+    // Step 7: Clean up socket connection
     console.log('RMF Lifecycle: Cleaning up socket connection...');
     const { context, rmfEvents } = rmfCore;
     
@@ -272,7 +254,7 @@ async function cleanup() {
   }
   
   try {
-    // Step 9: Clear context data
+    // Step 8: Clear context data
     console.log('RMF Lifecycle: Clearing context data...');
     rmfCore.clearContextData();
     console.log('RMF Lifecycle: Context data cleared');
@@ -342,7 +324,6 @@ function getLifecycleState() {
     ...lifecycleState,
     dataProcessor: !!lifecycleState.dataProcessor,
     robotManager: !!lifecycleState.robotManager,
-    rosInitializer: !!lifecycleState.rosInitializer,
     subscriptionsManager: !!lifecycleState.subscriptionsManager
   };
 }

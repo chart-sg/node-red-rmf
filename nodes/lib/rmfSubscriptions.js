@@ -1,5 +1,5 @@
 // File: nodes/lib/rmfSubscriptions.js
-const { processBuildingMapData, processFleetStateData, processDoorStateData, processLiftStateData } = require('./rmfDataProcessors');
+const { processBuildingMapData, processFleetStateData, processDoorStateData, processLiftStateData } = require('./rmfMessageTransformers');
 
 class RMFSubscriptions {
   constructor(rosNode, context, updateCallback) {
@@ -155,7 +155,7 @@ class RMFSubscriptions {
       this.buildingMapCache.data = response.building_map;
       
       // Process the building map data
-      const { processBuildingMapFromService } = require('./rmfDataProcessors');
+      const { processBuildingMapFromService } = require('./rmfMessageTransformers');
       processBuildingMapFromService(response.building_map, this.context, this.updateCallback);
       return true;
     } else {

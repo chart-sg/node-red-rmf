@@ -11,9 +11,7 @@ const rmfRobotManager = require('./rmfRobotManager');
 const rmfLifecycleManager = require('./rmfLifecycleManager');
 
 // Legacy imports - keeping for compatibility (only what's actually used)
-const RMFRosInitializer = require('./rmfRosInitializer');
 const RMFSubscriptions = require('./rmfSubscriptions');
-const { RMF_Ros2Instance } = require('./rmf-ros2-instance');
 const { SafeServiceClient } = require('./rmf-safe-service-client');
 
 // Re-export core components for backward compatibility
