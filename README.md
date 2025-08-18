@@ -25,6 +25,50 @@ npm install @chart/node-red-ros2 @chart/node-red-rmf
 
 *The `@chart/node-red-ros2-manager` is automatically installed as a dependency for reliable ROS2 operations.*
 
+## 🛠️ Prerequisites & Environment Setup
+
+This package requires a properly configured ROS2 and RMF environment:
+
+### Required Environment
+- **ROS2 Jazzy** (or compatible version)
+- **RMF Workspace** with required message packages
+- **rclnodejs** with RMF message type generation
+
+### Environment Check
+After installation, verify your environment is ready:
+
+```bash
+# Check RMF environment setup
+npm run check-rmf
+```
+
+This will verify:
+- ✅ ROS2 environment is sourced
+- ✅ RMF packages are available (`rmf_building_map_msgs`, `rmf_task_msgs`, etc.)
+- ✅ rclnodejs has generated RMF message types
+
+### Quick Setup Guide
+If the environment check fails:
+
+```bash
+# 1. Source your ROS2 environment
+source /opt/ros/jazzy/setup.bash
+
+# 2. Source your RMF workspace  
+source ~/rmf2A_ws/install/setup.bash
+
+# 3. Restart Node-RED to regenerate message types
+# (rclnodejs will automatically generate RMF message types on startup)
+
+# 4. Verify environment
+npm run check-rmf
+```
+
+### Troubleshooting
+- **Missing RMF message types**: Ensure RMF workspace is sourced before starting Node-RED
+- **rclnodejs generation issues**: Delete `~/.node-red/node_modules/rclnodejs/generated/` and restart Node-RED
+- **Package not found errors**: Verify RMF packages with `ros2 pkg list | grep rmf`
+
 ## 🏗️ Architecture
 
 This package uses the **Chart SharedManager** architecture for conflict-free ROS2 integration:
