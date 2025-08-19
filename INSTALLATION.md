@@ -1,6 +1,6 @@
 # Chart Node-RED RMF Package Installation Guide
 
-## 🚀 Quick Start for RMF Users
+## Quick Start for RMF Users
 
 ### Prerequisites
 - Ubuntu 22.04/24.04 with ROS2 (<distro>)
@@ -8,7 +8,7 @@
 - Node.js 14+ and npm
 - Node-RED installed
 
-## 🔧 Verification
+## Verification
 
 After installation, verify your setup:
 
@@ -31,7 +31,7 @@ node-red
 
 Visit `http://localhost:1880` and look for RMF nodes in the palette.
 
-## 🗑️ Uninstallation
+## Uninstallation
 ```bash
 cd ~/.node-red
 
@@ -49,7 +49,7 @@ cd <source-directory-manager> && npm unlink
 
 ### Step-by-Step Installation
 
-#### 1️⃣ **Setup RMF Environment**
+#### 1. **Setup RMF Environment**
 ```bash
 # Source ROS2 first
 source /opt/ros/<distro>/setup.bash  # e.g. <distro> is jazzy or humble
@@ -58,24 +58,41 @@ source /opt/ros/<distro>/setup.bash  # e.g. <distro> is jazzy or humble
 source <your-rmf-ws>/install/setup.bash  # e.g. <your-rmf-ws> is ~/rmf_ws
 ```
 
-#### 2️⃣ **Install Dependencies in Order**
+#### 2. **Install Dependencies in Order**
 
 **Option A: From .tgz files (Recommended for end users)**
 ```bash
+# Download .tgz files from GitHub Releases or get them from developer
+
 # Navigate to Node-RED directory
 cd ~/.node-red
 
 # Install rclnodejs with RMF environment sourced
 npm install rclnodejs
 
-# Install manager first (dependency)
+# Install packages in dependency order
 npm install ./chart-node-red-ros2-manager-1.0.0.tgz
-
-# Install rmf package
 npm install ./chart-node-red-rmf-1.0.0.tgz
 ```
 
-**Option B: Symlink from source (Development/Testing)**
+**Option B: Build from source (Advanced users)**
+```bash
+# Clone the repositories
+git clone <repository-url-manager>
+git clone <repository-url-rmf>
+
+# Build packages yourself
+cd node-red-ros2-manager && npm pack
+cd ../node-red-rmf && npm pack
+
+# Install the generated .tgz files
+cd ~/.node-red
+npm install rclnodejs
+npm install ../node-red-ros2-manager/chart-node-red-ros2-manager-1.0.0.tgz
+npm install ../node-red-rmf/chart-node-red-rmf-1.0.0.tgz
+```
+
+**Option C: Symlink from source (Development/Testing)**
 ```bash
 # Clone or download the source code
 git clone <repository-url-manager>
@@ -85,17 +102,18 @@ git clone <repository-url-rmf>
 cd ~/.node-red
 npm install rclnodejs
 
-# Create global npm links
+# Create global npm links for ALL packages
 cd <path-to>/node-red-ros2-manager && npm link
 cd <path-to>/node-red-rmf && npm link
 
-# Link in Node-RED directory
+# IMPORTANT: Link ALL packages simultaneously to avoid dependency conflicts
 cd ~/.node-red
-npm link @chart/node-red-ros2-manager
-npm link @chart/node-red-rmf
+npm link @chart/node-red-ros2-manager @chart/node-red-rmf
 ```
 
-**Option C: From npm registry (When published)**
+**Critical Note**: Always link all Chart packages at once. Linking them one by one will cause npm to remove existing symlinks due to dependency conflicts.
+
+**Option D: From npm registry (When published)**
 ```bash
 # Navigate to Node-RED directory
 cd ~/.node-red
@@ -113,9 +131,9 @@ npm install @chart/node-red-rmf
 - **Version Control**: Always using latest development version
 - **No Rebuilding**: No need to repack .tgz files after changes
 
-## 📦 Manual .tgz Installation
+## Manual .tgz Installation
 
-If installing from .tgz files:
+If you have .tgz files (from releases or built yourself):
 
 ```bash
 # 1. Source RMF environment
@@ -126,12 +144,13 @@ source <your-rmf-ws>/install/setup.bash  # e.g. <your-rmf-ws> is ~/rmf_ws
 cd ~/.node-red
 npm install rclnodejs
 
-# 3. Install packages in order
+# 3. Install packages in dependency order
+npm install ./chart-node-red-ros2-manager-1.0.0.tgz
 npm install ./chart-node-red-rmf-1.0.0.tgz
 ```
 
 
-## 🔧 Verification
+## Verification
 
 After installation, verify your setup:
 
@@ -148,7 +167,7 @@ node-red
 
 Visit `http://localhost:1880` and look for RMF nodes in the palette.
 
-## 🤖 RMF-Specific Features
+## RMF-Specific Features
 
 This package provides:
 - **rmf-config**: RMF fleet management configuration

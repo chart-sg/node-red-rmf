@@ -6,26 +6,30 @@ A collection of Node-RED subflow modules for RMF (Robot Middleware Framework) in
 
 This package provides reusable Node-RED subflows designed for RMF applications. Each subflow is packaged as a proper Node-RED module that can be easily installed and used in Node-RED flows.
 
-### ✨ Key Features
+### Key Features
 
-- **🌉 SharedManager Integration**: Built-in `@chart/node-red-ros2-manager` for reliable ROS2 operations
-- **🚀 RMF-Specific Nodes**: Fleet management, task dispatch, and coordination nodes
-- **🤝 Multi-Plugin Compatible**: Works alongside `@chart/node-red-ros2` and other Chart ROS2 plugins
-- **⚡ Production Ready**: No spinning conflicts, proper resource management
+- **SharedManager Integration**: Built-in `@chart/node-red-ros2-manager` for reliable ROS2 operations
+- **RMF-Specific Nodes**: Fleet management, task dispatch, and coordination nodes
+- **Multi-Plugin Compatible**: Works alongside `@chart/node-red-ros2` and other Chart ROS2 plugins
+- **Production Ready**: No spinning conflicts, proper resource management
 
-## Installation
+## Quick Installation
 
 ```bash
-# Install RMF nodes (ros2-manager included automatically)
-npm install @chart/node-red-rmf
+# 1. Source ROS2/RMF environment
+source /opt/ros/jazzy/setup.bash        # (or your ROS2 distro)
+source ~/rmf_ws/install/setup.bash      # (your RMF workspace)
 
-# Or install both ROS2 + RMF for complete integration
-npm install @chart/node-red-ros2 @chart/node-red-rmf
+# 2. Install in Node-RED directory (with .tgz files)
+cd ~/.node-red
+npm install rclnodejs
+npm install ./chart-node-red-ros2-manager-1.0.0.tgz
+npm install ./chart-node-red-rmf-1.0.0.tgz
 ```
 
-*The `@chart/node-red-ros2-manager` is automatically installed as a dependency for reliable ROS2 operations.*
+**Complete Installation Guide** - Multiple methods, troubleshooting, development setup: [INSTALLATION.md](./INSTALLATION.md)
 
-## 🛠️ Prerequisites & Environment Setup
+## Prerequisites & Environment Setup
 
 This package requires a properly configured ROS2 and RMF environment:
 
@@ -43,9 +47,9 @@ npm run check-rmf
 ```
 
 This will verify:
-- ✅ ROS2 environment is sourced
-- ✅ RMF packages are available (`rmf_building_map_msgs`, `rmf_task_msgs`, etc.)
-- ✅ rclnodejs has generated RMF message types
+- ROS2 environment is sourced
+- RMF packages are available (`rmf_building_map_msgs`, `rmf_task_msgs`, etc.)
+- rclnodejs has generated RMF message types
 
 ### Quick Setup Guide
 If the environment check fails:
@@ -69,7 +73,7 @@ npm run check-rmf
 - **rclnodejs generation issues**: Delete `~/.node-red/node_modules/rclnodejs/generated/` and restart Node-RED
 - **Package not found errors**: Verify RMF packages with `ros2 pkg list | grep rmf`
 
-## 🏗️ Architecture
+## Architecture
 
 This package uses the **Chart SharedManager** architecture for conflict-free ROS2 integration:
 
@@ -89,10 +93,10 @@ This package uses the **Chart SharedManager** architecture for conflict-free ROS
 ```
 
 ### Benefits:
-- ✅ **No ActionClient spinning conflicts** - SafeActionClient pattern
-- ✅ **Multi-plugin compatibility** - shared ROS2 context across all Chart plugins
-- ✅ **Production reliability** - proper resource management and error recovery
-- ✅ **RMF-specific optimizations** - fleet coordination and task management
+- **No ActionClient spinning conflicts** - SafeActionClient pattern
+- **Multi-plugin compatibility** - shared ROS2 context across all Chart plugins
+- **Production reliability** - proper resource management and error recovery
+- **RMF-specific optimizations** - fleet coordination and task management
 
 ## Available Nodes
 
@@ -101,7 +105,7 @@ This package uses the **Chart SharedManager** architecture for conflict-free ROS
 - **Function**: A simple test node that demonstrates the subflow structure
 - **Configuration**: Message text (default: "hello-word")
 
-## 🎯 Compatibility & Usage
+## Compatibility & Usage
 
 - **SharedManager Required**: This package requires the ros2-manager for all ROS2 operations
 - **Multi-Plugin**: Works seamlessly with `@chart/node-red-ros2` and other Chart ROS2 plugins
@@ -170,12 +174,12 @@ The script handles both:
 ### Validation
 
 The validation script checks:
-- ✅ All JSON files are valid subflows
-- ✅ Each subflow has required properties (id, name, flow)
-- ✅ No duplicate IDs
-- ✅ Corresponding JS wrapper files exist
-- ✅ All nodes are registered in package.json
-- ✅ No orphaned files
+- All JSON files are valid subflows
+- Each subflow has required properties (id, name, flow)
+- No duplicate IDs
+- Corresponding JS wrapper files exist
+- All nodes are registered in package.json
+- No orphaned files
 
 ### Testing Locally
 
