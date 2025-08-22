@@ -8,7 +8,8 @@
       robot_name: { value: '' },
       robot_fleet: { value: '' },
       location_name: { value: '' },
-      zone_type: { value: 'none' },
+      zone_type: { value: 'default' },
+      zone_preferred_waypoint: { value: '' },
       stubborn_period: { value: 0 },
       parallel_behaviour: { value: 'abort' }
     },
@@ -22,249 +23,481 @@
     oneditprepare: function() {
       const node = this;
       
-      // Initialize data storage
-      node.rmfData = {
-        robots: [],
-        locations: [],
-        fleets: []
+      // Single source of truth for data
+      node.rmfData = { robots: [], locations: [], zones: [], fleets: [], navGraphs: [] };
+      
+      // Simple state tracking
+      node.isLoaded = false;
+      
+      // Constants
+      const PLACEMENT_LABELS = {
+        'default': 'Default',
+        'center': 'Center',
+        'left': 'Left', 
+        'right': 'Right',
+        'top': 'Top',
+        'bottom': 'Bottom'
       };
       
-      // Load RMF data from context
-      loadRMFData();
+      // Initialize
+      init();
       
-      // Setup change handlers
-      setupChangeHandlers();
-      
-      // Setup refresh button
-      setupRefreshButton();
-      
-      function setupRefreshButton() {
-        $('#refresh-rmf-data').on('click', function() {
-          const button = $(this);
-          const originalText = button.html();
-          
-          // Show loading state
-          button.html('<i class="fa fa-spinner fa-spin"></i> Loading...');
-          button.prop('disabled', true);
-          
-          // Reload data
-          loadRMFData();
-          
-          // Reset button after delay
-          setTimeout(() => {
-            button.html(originalText);
-            button.prop('disabled', false);
-          }, 1000);
+      function init() {
+        loadRMFData().then(() => {
+          populateAllDropdowns();
+          setupEventHandlers();
+          node.isLoaded = true;
         });
       }
       
+      // SIMPLIFIED: Single data loading function
       function loadRMFData() {
-        // Fetch RMF data from the global context
-        $.getJSON('/rmf/data', function(data) {
-          node.rmfData = data;
-          
-          if (data.status === 'not_initialized') {
-            console.warn('RMF context not initialized - dropdowns will be empty');
-            showDataStatus('RMF not initialized. Deploy RMF Config node first.', 'warning');
-          } else if (data.status === 'error') {
-            console.error('Error loading RMF data:', data.message);
-            showDataStatus('Error loading RMF data: ' + data.message, 'error');
-          } else if (data.robots.length === 0 && data.locations.length === 0) {
-            console.warn('No RMF data available - dropdowns will be empty');
-            showDataStatus('No RMF data available. Check RMF system status.', 'warning');
-          } else {
-            showDataStatus(`Loaded ${data.robots.length} robots, ${data.locations.length} locations`, 'success');
-          }
-          
-          populateDropdowns();
-        }).fail(function(xhr, status, error) {
-          console.error('Failed to load RMF data:', error);
-          showDataStatus('Failed to connect to RMF data source', 'error');
-          node.rmfData = { robots: [], locations: [], fleets: [] };
-          populateDropdowns();
-        });
+        return $.getJSON('/rmf/data')
+          .done(data => {
+            console.log('Received RMF data:', data);
+            node.rmfData = data;
+            showStatus(data);
+          })
+          .fail(() => {
+            console.error('Failed to load RMF data');
+            node.rmfData = { robots: [], locations: [], zones: [], fleets: [], navGraphs: [] };
+            showStatus({ status: 'error', message: 'Failed to load RMF data' });
+          });
       }
       
-      function showDataStatus(message, type) {
-        // Remove any existing status message
-        $('.rmf-data-status').remove();
-        
-        // Add status message
-        let statusClass = 'form-tips';
-        let icon = 'fa-info-circle';
-        let color = '#666';
-        
-        if (type === 'warning') {
-          statusClass = 'form-tips';
-          icon = 'fa-exclamation-triangle';
-          color = '#ff9800';
-        } else if (type === 'error') {
-          statusClass = 'form-tips';
-          icon = 'fa-exclamation-circle';
-          color = '#f44336';
-        } else if (type === 'success') {
-          statusClass = 'form-tips';
-          icon = 'fa-check-circle';
-          color = '#4caf50';
-        }
-        
-        const statusDiv = $(`
-          <div class="rmf-data-status ${statusClass}" style="color: ${color}; margin-top: 10px;">
-            <i class="fa ${icon}" style="margin-right: 5px;"></i>
-            ${message}
-          </div>
-        `);
-        
-        $('#node-input-config').closest('.form-row').after(statusDiv);
+      // SIMPLIFIED: Single dropdown population function
+      function populateAllDropdowns() {
+        populateRobotDropdown();
+        populateFleetDropdown();
+        populateLevelDropdown();
+        populateLocationDropdown();
+        updateZoneFields();
       }
       
-      function populateDropdowns() {
-        // Populate robot dropdown
-        const robotSelect = $('#node-input-robot_name');
-        robotSelect.empty();
-        robotSelect.append('<option value="">Use msg.rmf_robot_name</option>');
+      // SIMPLIFIED: Individual dropdown functions without complex state logic
+      function populateRobotDropdown() {
+        const select = $('#node-input-robot_name');
+        const currentValue = node.isLoaded ? select.val() : node.robot_name;
+        
+        select.empty().append('<option value="">Use msg.rmf_robot_name</option>');
         
         if (node.rmfData.robots && node.rmfData.robots.length > 0) {
           node.rmfData.robots.forEach(robot => {
-            robotSelect.append(`<option value="${robot.name}" data-fleet="${robot.fleet}">${robot.name} (${robot.fleet})</option>`);
+            select.append(`<option value="${robot.name}" data-fleet="${robot.fleet}">${robot.name} (${robot.fleet})</option>`);
           });
         }
         
-        // Populate fleet dropdown
-        const fleetSelect = $('#node-input-robot_fleet');
-        fleetSelect.empty();
-        fleetSelect.append('<option value="">Use msg.rmf_robot_fleet</option>');
+        select.val(currentValue || '');
+      }
+      
+      function populateFleetDropdown() {
+        const select = $('#node-input-robot_fleet');
+        const currentValue = node.isLoaded ? select.val() : node.robot_fleet;
+        
+        select.empty().append('<option value="">Use msg.rmf_robot_fleet</option>');
         
         if (node.rmfData.fleets && node.rmfData.fleets.length > 0) {
           node.rmfData.fleets.forEach(fleet => {
-            fleetSelect.append(`<option value="${fleet}">${fleet}</option>`);
+            select.append(`<option value="${fleet}">${fleet}</option>`);
           });
         }
         
-        // Populate level dropdown with unique levels from named locations
+        select.val(currentValue || '');
+      }
+      
+      function populateLevelDropdown() {
+        const select = $('#node-input-location_level');
+        if (select.length === 0) return; // Level dropdown might not exist
+        
+        const currentValue = node.isLoaded ? select.val() : node.location_level;
+        
+        select.empty().append('<option value="">All Levels</option>');
+        
+        // Extract unique levels from locations and zones
+        const levels = new Set();
+        
+        if (node.rmfData.navGraphs) {
+          node.rmfData.navGraphs.forEach(navGraph => {
+            if (navGraph.vertices) {
+              navGraph.vertices.forEach(vertex => {
+                const level = getVertexLevel(vertex);
+                if (level) levels.add(level);
+              });
+            }
+          });
+        }
+        
+        if (node.rmfData.zones) {
+          node.rmfData.zones.forEach(zone => {
+            if (zone.level) levels.add(zone.level);
+          });
+        }
+        
+        Array.from(levels).sort().forEach(level => {
+          select.append(`<option value="${level}">${level}</option>`);
+        });
+        
+        select.val(currentValue || '');
+      }
+      
+      function populateLocationDropdown() {
+        const select = $('#node-input-location_name');
         const levelSelect = $('#node-input-location_level');
-        if (levelSelect.length > 0) {
-          levelSelect.empty();
-          levelSelect.append('<option value="">-- All Levels --</option>');
+        const fleetSelect = $('#node-input-robot_fleet');
+        
+        const currentValue = node.isLoaded ? select.val() : node.location_name;
+        const selectedLevel = levelSelect.length > 0 ? levelSelect.val() : '';
+        const selectedFleet = fleetSelect.val();
+        
+        console.log('Populating locations - Fleet:', selectedFleet, 'Level:', selectedLevel);
+        
+        select.empty().append('<option value="">Use msg.location_name</option>');
+        
+        // Get relevant nav graphs (filter by fleet if specified)
+        let relevantNavGraphs = node.rmfData.navGraphs || [];
+        if (selectedFleet) {
+          relevantNavGraphs = relevantNavGraphs.filter(ng => 
+            ng.fleet === selectedFleet || ng.name === selectedFleet
+          );
+          console.log('Filtered navGraphs for fleet', selectedFleet, ':', relevantNavGraphs.length);
+        }
+        
+        // Extract locations from nav graphs
+        const locations = new Map(); // Use Map to avoid duplicates while keeping metadata
+        
+        relevantNavGraphs.forEach(navGraph => {
+          if (navGraph.vertices) {
+            navGraph.vertices.forEach(vertex => {
+              if (vertex.name && vertex.name.trim() !== '') {
+                const vertexLevel = getVertexLevel(vertex);
+                if (!selectedLevel || vertexLevel === selectedLevel) {
+                  // Check if this vertex is part of a zone
+                  const isPartOfZone = node.rmfData.zones && node.rmfData.zones.some(zone => {
+                    const zoneVertices = getZoneVertices(zone);
+                    if (zoneVertices.length === 0) return false;
+                    
+                    // Check different possible zone vertex structures
+                    const found = zoneVertices.some(zv => {
+                      // Check by name if available
+                      if (zv.name && zv.name === vertex.name) return true;
+                      
+                      // Check by vertex index if zone vertices are indices
+                      if (typeof zv === 'number' && vertex.index === zv) return true;
+                      
+                      // Check if zone vertex has same coordinates as this vertex
+                      if (zv.x !== undefined && zv.y !== undefined && 
+                          Math.abs(zv.x - vertex.x) < 0.01 && Math.abs(zv.y - vertex.y) < 0.01) {
+                        return true;
+                      }
+                      
+                      return false;
+                    });
+                    
+                    if (found) {
+                      console.log(`Vertex ${vertex.name} is part of zone ${zone.name}`);
+                    }
+                    return found;
+                  });
+                  
+                  if (!isPartOfZone) {
+                    locations.set(vertex.name, {
+                      name: vertex.name,
+                      level: vertexLevel,
+                      isZone: false
+                    });
+                  }
+                }
+              }
+            });
+          }
+        });
+        
+        // Add zones (only if fleet matches or no fleet filter)
+        if (node.rmfData.zones) {
+          node.rmfData.zones.forEach(zone => {
+            if (zone.name && zone.name.trim() !== '') {
+              const zoneLevel = zone.level || 'L1';
+              if (!selectedLevel || zoneLevel === selectedLevel) {
+                // Check if zone belongs to selected fleet
+                let zoneMatchesFleet = true;
+                if (selectedFleet && zone.fleet) {
+                  zoneMatchesFleet = zone.fleet === selectedFleet;
+                }
+                
+                if (zoneMatchesFleet) {
+                  locations.set(zone.name, {
+                    name: zone.name,
+                    level: zoneLevel,
+                    isZone: true
+                  });
+                }
+              }
+            }
+          });
+        }
+        
+        // Populate dropdown
+        Array.from(locations.values()).sort((a, b) => a.name.localeCompare(b.name)).forEach(loc => {
+          const type = loc.isZone ? ' (Zone)' : '';
+          select.append(`<option value="${loc.name}" data-is-zone="${loc.isZone}">${loc.name}${type}</option>`);
+        });
+        
+        select.val(currentValue || '');
+        console.log('Populated', locations.size, 'locations');
+      }
+      
+      // SIMPLIFIED: Event handlers with clear responsibilities
+      function setupEventHandlers() {
+        // Robot selection: auto-select fleet, refresh locations
+        $('#node-input-robot_name').off('change').on('change', function() {
+          const robotName = $(this).val();
+          if (robotName) {
+            const robot = node.rmfData.robots.find(r => r.name === robotName);
+            if (robot) {
+              $('#node-input-robot_fleet').val(robot.fleet);
+              populateLocationDropdown();
+            }
+          } else {
+            $('#node-input-robot_fleet').val('');
+            // Don't refresh locations when "Use msg..." is selected to avoid flickering
+          }
+          updateZoneFields();
+        });
+        
+        // Fleet selection: validate robot, refresh locations
+        $('#node-input-robot_fleet').off('change').on('change', function() {
+          const fleetName = $(this).val();
+          const robotName = $('#node-input-robot_name').val();
           
-          if (node.rmfData.locations && node.rmfData.locations.length > 0) {
-            // Filter to only named locations and get unique levels
-            const namedLocations = node.rmfData.locations.filter(location => location.name && location.name.trim() !== '');
-            const uniqueLevels = [...new Set(namedLocations.map(location => location.level))].sort();
-            
-            uniqueLevels.forEach(level => {
-              levelSelect.append(`<option value="${level}">${level}</option>`);
+          console.log('Fleet changed to:', fleetName || '(Use msg)');
+          
+          // If robot doesn't belong to selected fleet, clear it
+          if (robotName && fleetName) {
+            const robot = node.rmfData.robots.find(r => r.name === robotName);
+            if (robot && robot.fleet !== fleetName) {
+              $('#node-input-robot_name').val('');
+            }
+          }
+          
+          populateLocationDropdown();
+          updateZoneFields();
+        });
+        
+        // Location selection: update zone fields
+        $('#node-input-location_name').off('change').on('change', function() {
+          updateZoneFields();
+        });
+        
+        // Level selection: refresh locations
+        $('#node-input-location_level').off('change').on('change', function() {
+          populateLocationDropdown();
+          updateZoneFields();
+        });
+        
+        // Refresh button
+        $('#refresh-rmf-data').off('click').on('click', function() {
+          const button = $(this);
+          button.prop('disabled', true).text('Refreshing...');
+          
+          loadRMFData().then(() => {
+            populateAllDropdowns();
+            button.prop('disabled', false).html('<i class="fa fa-refresh"></i> Refresh Data');
+          });
+        });
+      }
+      
+      // SIMPLIFIED: Zone field management
+      function updateZoneFields() {
+        const locationName = $('#node-input-location_name').val();
+        const selectedOption = $('#node-input-location_name option:selected');
+        const isZone = selectedOption.data('is-zone') === true;
+        
+        const zoneTypeRow = $('#node-input-zone_type').closest('.form-row');
+        const zoneWaypointRow = $('#node-input-zone_preferred_waypoint').closest('.form-row');
+        
+        if (isZone && locationName) {
+          zoneTypeRow.show();
+          zoneWaypointRow.show();
+          populateZoneTypeDropdown(locationName);
+          populateZoneWaypointDropdown(locationName);
+        } else {
+          zoneTypeRow.hide();
+          zoneWaypointRow.hide();
+          $('#node-input-zone_type').val('default');
+          $('#node-input-zone_preferred_waypoint').val('');
+        }
+      }
+      
+      function populateZoneTypeDropdown(zoneName) {
+        const select = $('#node-input-zone_type');
+        const currentValue = select.val();
+        
+        select.empty();
+        
+        // Find the zone data
+        const zone = node.rmfData.zones ? node.rmfData.zones.find(z => z.name === zoneName) : null;
+        
+        if (zone) {
+          const zoneVertices = getZoneVertices(zone);
+          
+          // Extract unique placement types from zone vertices
+          const placements = new Set();
+          zoneVertices.forEach(vertex => {
+            if (vertex.placement) {
+              placements.add(vertex.placement);
+            }
+          });
+          
+          // Add placement options
+          if (placements.size > 0) {
+            Array.from(placements).forEach(placement => {
+              const label = PLACEMENT_LABELS[placement] || placement;
+              select.append(`<option value="${placement}">${label}</option>`);
+            });
+          } else {
+            // Fallback if no placement data
+            select.append('<option value="default">Default</option>');
+          }
+        } else {
+          // Fallback zone types
+          select.append('<option value="default">Default</option>');
+          select.append('<option value="center">Center</option>');
+          select.append('<option value="left">Left</option>');
+          select.append('<option value="right">Right</option>');
+        }
+        
+        // Always add Patient Facing option
+        select.append('<option value="patient_facing">Patient Facing</option>');
+        
+        // Restore previous value
+        select.val(currentValue || node.zone_type || 'default');
+      }
+      
+      function populateZoneWaypointDropdown(zoneName) {
+        const select = $('#node-input-zone_preferred_waypoint');
+        const currentValue = select.val();
+        
+        select.empty().append('<option value="">Auto (Use Zone Type)</option>');
+        
+        // Find the zone data
+        const zone = node.rmfData.zones ? node.rmfData.zones.find(z => z.name === zoneName) : null;
+        
+        if (zone) {
+          console.log('Zone data for', zoneName, ':', zone);
+          
+          const zoneVertices = getZoneVertices(zone);
+          console.log('Zone vertices:', zoneVertices);
+          
+          if (zoneVertices.length > 0) {
+            zoneVertices.forEach((vertex, index) => {
+              let vertexName, displayName, vertexValue;
+              
+              // Handle different zone vertex structures
+              if (typeof vertex === 'object' && vertex.name) {
+                // Vertex object with name
+                vertexName = vertex.name;
+                vertexValue = vertex.name;
+                displayName = vertexName;
+                
+                // Add placement info if available
+                if (vertex.placement) {
+                  const label = PLACEMENT_LABELS[vertex.placement] || vertex.placement;
+                  displayName = `${vertexName} (${label})`;
+                }
+              } else if (typeof vertex === 'number') {
+                // Vertex index - find corresponding vertex name from navGraphs
+                const graph = node.rmfData.navGraphs ? node.rmfData.navGraphs.find(g => 
+                  g.name === zone.graph || g.vertices.length > vertex
+                ) : null;
+                
+                if (graph && graph.vertices[vertex]) {
+                  vertexName = graph.vertices[vertex].name || `Vertex ${vertex}`;
+                  vertexValue = vertexName;
+                  displayName = `${vertexName} (Position ${index + 1})`;
+                } else {
+                  vertexName = `Vertex ${vertex}`;
+                  vertexValue = `vertex_${vertex}`;
+                  displayName = `Position ${index + 1} (Index ${vertex})`;
+                }
+              } else {
+                // Fallback for other structures
+                vertexName = `Position ${index + 1}`;
+                vertexValue = `vertex_${index}`;
+                displayName = vertexName;
+              }
+              
+              select.append(`<option value="${vertexValue}">${displayName}</option>`);
             });
           }
         }
         
-        // Populate location dropdown with filtered locations
-        populateLocationDropdown();
-        
-        // Set current values
-        robotSelect.val(node.robot_name || '');
-        fleetSelect.val(node.robot_fleet || '');
-        if (levelSelect.length > 0) {
-          levelSelect.val(node.location_level || '');
-        }
+        // Restore previous value
+        select.val(currentValue || node.zone_preferred_waypoint || '');
       }
       
-      function populateLocationDropdown() {
-        const locationSelect = $('#node-input-location_name');
-        const levelSelect = $('#node-input-location_level');
-        const selectedLevel = levelSelect.length > 0 ? levelSelect.val() : '';
-        
-        locationSelect.empty();
-        locationSelect.append('<option value="">Use msg.location_name</option>');
-        
-        if (node.rmfData.locations && node.rmfData.locations.length > 0) {
-          // Filter to only named locations
-          let filteredLocations = node.rmfData.locations.filter(location => 
-            location.name && location.name.trim() !== ''
-          );
-          
-          // Further filter by level if a specific level is selected
-          if (selectedLevel && selectedLevel !== '') {
-            filteredLocations = filteredLocations.filter(location => location.level === selectedLevel);
-          }
-          
-          // Sort locations by name
-          filteredLocations.sort((a, b) => a.name.localeCompare(b.name));
-          
-          filteredLocations.forEach(location => {
-            locationSelect.append(`<option value="${location.name}">${location.name}</option>`);
-          });
-        }
-        
-        // Restore location selection if it's still valid
-        locationSelect.val(node.location_name || '');
+      // Helper functions
+      function getZoneVertices(zone) {
+        return zone.vertices || zone.zone_vertices || [];
       }
       
-      function setupChangeHandlers() {
-        // Robot selection change handler
-        $('#node-input-robot_name').on('change', function() {
-          const selectedRobot = $(this).val();
-          const selectedOption = $(this).find('option:selected');
-          const robotFleet = selectedOption.data('fleet');
-          
-          // Only auto-select fleet if:
-          // 1. A specific robot is selected (not "Use msg.rmf_robot_name")
-          // 2. Fleet is currently set to "Use msg.rmf_robot_fleet" (empty value)
-          if (selectedRobot && selectedRobot !== '' && robotFleet) {
-            const currentFleetSelection = $('#node-input-robot_fleet').val();
-            // Only auto-select if fleet dropdown is set to "Use msg.rmf_robot_fleet" (empty value)
-            if (currentFleetSelection === '') {
-              $('#node-input-robot_fleet').val(robotFleet);
-            }
+      function getVertexLevel(vertex) {
+        if (vertex.params && vertex.params.length > 0) {
+          const mapNameParam = vertex.params.find(p => p.name === 'map_name');
+          if (mapNameParam && mapNameParam.value_string) {
+            return mapNameParam.value_string;
           }
-        });
+        }
+        return 'L1'; // Default level
+      }
+      
+      function showStatus(data) {
+        // Remove any existing status message
+        $('.rmf-data-status').remove();
         
-        // Fleet selection change handler
-        $('#node-input-robot_fleet').on('change', function() {
-          const selectedFleet = $(this).val();
-          const robotSelect = $('#node-input-robot_name');
-          
-          if (selectedFleet && selectedFleet !== '') {
-            // Filter robots to only show those from the selected fleet
-            const currentRobot = robotSelect.val();
-            robotSelect.empty();
-            robotSelect.append('<option value="">Use msg.rmf_robot_name</option>');
-            
-            if (node.rmfData.robots && node.rmfData.robots.length > 0) {
-              node.rmfData.robots.forEach(robot => {
-                if (robot.fleet === selectedFleet) {
-                  robotSelect.append(`<option value="${robot.name}" data-fleet="${robot.fleet}">${robot.name} (${robot.fleet})</option>`);
-                }
-              });
-            }
-            
-            // Restore selection if robot is from the selected fleet
-            const robotFromFleet = node.rmfData.robots.find(r => r.name === currentRobot && r.fleet === selectedFleet);
-            if (robotFromFleet) {
-              robotSelect.val(currentRobot);
-            }
-          } else {
-            // If "Use msg.rmf_robot_fleet" is selected, show all robots but don't reset selection
-            const currentRobot = robotSelect.val();
-            robotSelect.empty();
-            robotSelect.append('<option value="">Use msg.rmf_robot_name</option>');
-            
-            if (node.rmfData.robots && node.rmfData.robots.length > 0) {
-              node.rmfData.robots.forEach(robot => {
-                robotSelect.append(`<option value="${robot.name}" data-fleet="${robot.fleet}">${robot.name} (${robot.fleet})</option>`);
-              });
-            }
-            
-            // Restore the current robot selection
-            robotSelect.val(currentRobot);
-          }
-        });
+        let message = '';
+        let type = 'info';
         
-        // Level selection change handler (if level dropdown exists)
-        $('#node-input-location_level').on('change', function() {
-          // Re-populate location dropdown when level changes
-          populateLocationDropdown();
-        });
+        if (data.status === 'not_initialized') {
+          message = 'RMF not initialized. Deploy RMF Config node first.';
+          type = 'warning';
+        } else if (data.status === 'error') {
+          message = 'Error loading RMF data: ' + (data.message || 'Unknown error');
+          type = 'error';
+        } else if ((data.robots?.length || 0) === 0 && (data.locations?.length || 0) === 0) {
+          message = 'No RMF data available. Check RMF system status.';
+          type = 'warning';
+        } else {
+          const robotCount = data.robots?.length || 0;
+          const locationCount = data.locations?.length || 0;
+          const zoneCount = data.zones?.length || 0;
+          const navGraphCount = data.navGraphs?.length || 0;
+          message = `Loaded ${robotCount} robots, ${locationCount} locations, ${zoneCount} zones, ${navGraphCount} navGraphs`;
+          type = 'success';
+        }
+        
+        const statusColors = {
+          'success': '#5cb85c',
+          'warning': '#f0ad4e', 
+          'error': '#d9534f',
+          'info': '#5bc0de'
+        };
+        
+        const statusHtml = `
+          <div class="rmf-data-status" style="
+            margin: 10px 0; 
+            padding: 8px 12px; 
+            border-radius: 4px; 
+            background-color: ${statusColors[type]}20; 
+            border-left: 4px solid ${statusColors[type]}; 
+            font-size: 12px;
+            color: #333;
+          ">
+            <i class="fa fa-${type === 'success' ? 'check' : type === 'warning' ? 'exclamation-triangle' : type === 'error' ? 'times' : 'info'}-circle" style="color: ${statusColors[type]}; margin-right: 6px;"></i>
+            ${message}
+          </div>
+        `;
+        
+        $('#refresh-rmf-data').parent().after(statusHtml);
       }
     },
     oneditsave: function() {
@@ -275,9 +508,6 @@
         RED.notify('Location is required (select a location or use "Use msg.location_name")', 'error');
         return false;
       }
-      
-      // Explicitly handle checkbox to ensure proper boolean value is saved
-      this.last_event = $('#node-input-last_event').prop('checked');
       
       return true;
     }
@@ -321,13 +551,20 @@
   <div class="form-row">
     <label for="node-input-zone_type">Zone Type (RMF 2.0)</label>
     <select id="node-input-zone_type" style="width: 100%;">
-      <option value="none">None</option>
+      <option value="default">Default</option>
       <option value="patient_facing">Patient Facing</option>
       <option value="bottom">Bottom</option>
       <option value="center">Center</option>
       <option value="left">Left</option>
       <option value="right">Right</option>
       <option value="top">Top</option>
+    </select>
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-zone_preferred_waypoint">Zone Preferred Waypoint</label>
+    <select id="node-input-zone_preferred_waypoint" style="width: 100%;">
+      <option value="">Auto (Use Zone Type)</option>
     </select>
   </div>
   
@@ -351,107 +588,87 @@
     <b>Setup Requirements:</b><br/>
     • Connect this node after a start-task node<br/>
     • Deploy and connect an RMF Config node first<br/>
-    • Use "Refresh Data" button if dropdowns are empty<br/><br/>
+    • Refresh data to populate dropdowns<br/><br/>
     
-    <b>Usage Tips:</b><br/>
-    • Location is required (select from dropdown or use "Use msg.location_name")<br/>
-    • Robot name and fleet should come from the previous start-task node<br/>
-    • Use "Use msg.xxx" dropdown options to pass values via message properties<br/>
-    • Connect the success output to an end-task node to complete the workflow
+    <b>Configuration Options:</b><br/>
+    <dt>Robot Name</dt>
+    <dd>The name of the robot to command (optional). Auto-populates fleet when selected, or use "Use msg.rmf_robot_name" to pass via message. Usually passed from start-task node.</dd>
+    
+    <dt>Robot Fleet</dt>
+    <dd>The fleet the robot belongs to (optional). Auto-selected when robot is chosen, or use "Use msg.rmf_robot_fleet" to pass via message. Usually passed from start-task node.</dd>
+    
+    <dt>Location Name</dt>
+    <dd>The destination location or zone name. Locations from nav graphs and zones are shown. Use "Use msg.location_name" to pass via message.</dd>
+    
+    <dt>Zone Type</dt>
+    <dd>For zone locations, specifies the placement within the zone (Default, Left, Right, Patient Facing, etc.). Only visible when a zone is selected.</dd>
+    
+    <dt>Zone Preferred Waypoint</dt>
+    <dd>For zone locations, allows selection of a specific waypoint within the zone. Only visible when a zone is selected. Use "Auto" to let the system choose based on zone type.</dd>
+    
+    <dt>Stubborn Period</dt>
+    <dd>Time in seconds that the robot will attempt to reach the location before giving up (default: 0 = no limit).</dd>
+    
+    <dt>Parallel Behaviour</dt>
+    <dd>How to handle overlapping goto requests: "abort" cancels previous request, "overwrite" replaces it.</dd>
   </div>
 </script>
 
 <script type="text/html" data-help-name="goto-place">
-  <p>Sends a robot to a predefined location using RMF dynamic events. This node should be connected after a start-task node.</p>
-  
-  <h3>Configuration</h3>
-  <dl class="message-properties">
-    <dt>Robot Name <span class="property-type">string</span></dt>
-    <dd>The name of the robot (optional). Select from dropdown or use "Use msg.rmf_robot_name" to pass via message. Usually passed from start-task node.</dd>
-    
-    <dt>Robot Fleet <span class="property-type">string</span></dt>
-    <dd>The fleet the robot belongs to (optional). Auto-selected when robot is chosen, or use "Use msg.rmf_robot_fleet" to pass via message. Usually passed from start-task node.</dd>
-    
-    <dt>Location Name <span class="property-type">string</span></dt>
-    <dd>The target location name (required). Select from dropdown or use "Use msg.location_name" to pass via message.</dd>
-    
-    <dt>Zone Type <span class="property-type">string</span></dt>
-    <dd>Optional zone specification for precise positioning (default: "none").</dd>
-    
-    <dt>Stubborn Period <span class="property-type">number</span></dt>
-    <dd>How long the dynamic event should persist in seconds (default: 0).</dd>
-    
-    <dt>Parallel Behaviour <span class="property-type">string</span></dt>
-    <dd>How to handle conflicting dynamic events: "abort" or "overwrite" (default: "abort"). Note: "queue" is not supported - use multiple start-task → goto-place chains for queued behavior.</dd>
-  </dl>
+  <p>Sends a robot to a specific location using RMF dynamic events.</p>
   
   <h3>Inputs</h3>
   <dl class="message-properties">
-    <dt>msg.rmf_task_id <span class="property-type">string</span></dt>
-    <dd>RMF task ID metadata (preferred - automatically set by start-task node)</dd>
-    
     <dt>msg.rmf_robot_name <span class="property-type">string</span></dt>
-    <dd>Robot name metadata (preferred - automatically set by start-task node)</dd>
+    <dd>The name of the robot to command. Overrides node configuration if provided.</dd>
     
     <dt>msg.rmf_robot_fleet <span class="property-type">string</span></dt>
-    <dd>Robot fleet metadata (preferred - automatically set by start-task node)</dd>
-    
-    <dt>msg.dynamic_event_seq <span class="property-type">number</span></dt>
-    <dd>Dynamic event sequence number (derived from robot context using robot name/fleet)</dd>
-    
-    <dt>msg.robot_name <span class="property-type">string</span></dt>
-    <dd>Robot name (fallback - for backward compatibility)</dd>
-    
-    <dt>msg.robot_fleet <span class="property-type">string</span></dt>
-    <dd>Robot fleet (fallback - for backward compatibility)</dd>
+    <dd>The fleet the robot belongs to. Overrides node configuration if provided.</dd>
     
     <dt>msg.location_name <span class="property-type">string</span></dt>
-    <dd>Location name (used when "Use msg.location_name" is selected)</dd>
+    <dd>The destination location name. Overrides node configuration if provided.</dd>
     
     <dt>msg.zone_type <span class="property-type">string</span></dt>
-    <dd>Zone type override (optional)</dd>
+    <dd>For zone locations, the placement type (default, left, right, patient_facing, etc.).</dd>
+    
+    <dt>msg.zone_preferred_waypoint <span class="property-type">string</span></dt>
+    <dd>For zone locations, specific waypoint name within the zone.</dd>
+    
+    <dt class="optional">msg.robot_name <span class="property-type">string</span></dt>
+    <dd>Legacy alias for msg.rmf_robot_name.</dd>
+    
+    <dt class="optional">msg.robot_fleet <span class="property-type">string</span></dt>
+    <dd>Legacy alias for msg.rmf_robot_fleet.</dd>
   </dl>
   
   <h3>Outputs</h3>
   <ol class="node-ports">
     <li>Success
       <dl class="message-properties">
-        <dt>payload.status <span class="property-type">string</span></dt>
-        <dd>"completed" when the robot successfully reaches the location</dd>
-        <dt>payload.success <span class="property-type">boolean</span></dt>
-        <dd>true for successful completion</dd>
-        <dt>payload.robot_name <span class="property-type">string</span></dt>
-        <dd>The robot name</dd>
-        <dt>payload.location_name <span class="property-type">string</span></dt>
-        <dd>The target location</dd>
+        <dt>payload <span class="property-type">object</span></dt>
+        <dd>Success response from RMF system with task details.</dd>
       </dl>
     </li>
     <li>Failed
       <dl class="message-properties">
-        <dt>payload.status <span class="property-type">string</span></dt>
-        <dd>"failed", "cancelled", "waiting", or "error"</dd>
-        <dt>payload.reason <span class="property-type">string</span></dt>
-        <dd>Description of the failure</dd>
+        <dt>payload <span class="property-type">object</span></dt>
+        <dd>Error response when goto task fails.</dd>
       </dl>
     </li>
     <li>Status
       <dl class="message-properties">
-        <dt>payload.status <span class="property-type">string</span></dt>
-        <dd>Real-time status updates: "underway", "completed", "failed", etc.</dd>
-        <dt>payload.robot_name <span class="property-type">string</span></dt>
-        <dd>The robot name</dd>
-        <dt>payload.timestamp <span class="property-type">string</span></dt>
-        <dd>Timestamp of the status update</dd>
+        <dt>payload <span class="property-type">object</span></dt>
+        <dd>Ongoing status updates during task execution.</dd>
       </dl>
     </li>
   </ol>
   
   <h3>Details</h3>
-  <p>This node handles dynamic event execution to move robots to specific locations. It expects to receive task information from a preceding start-task node.</p>
+  <p>This node sends a goto command to move a robot to a specified location. It supports both regular waypoint locations and zone locations with placement options.</p>
   
-  <p><strong>Workflow:</strong> start-task → goto-place → end-task for complete task lifecycle management.</p>
+  <p><b>Zone Support:</b> When a zone is selected, additional options appear for zone type (placement) and preferred waypoint selection. Zones provide flexible positioning within defined areas.</p>
   
-  <p><strong>Prerequisites:</strong> The robot must have an active RMF task with a dynamic event sequence. This is typically provided by connecting this node after a start-task node.</p>
+  <p><b>Fleet Integration:</b> The node automatically filters locations based on the selected robot fleet, ensuring only accessible locations are shown.</p>
   
-  <p><strong>Status Updates:</strong> The status output provides real-time feedback during robot movement, showing "underway" while moving and "completed" when the destination is reached.</p>
+  <p><b>Dynamic Configuration:</b> All parameters can be set via incoming messages, allowing for dynamic robot navigation based on runtime conditions.</p>
 </script>

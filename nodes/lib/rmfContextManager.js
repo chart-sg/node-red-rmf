@@ -37,6 +37,8 @@ const getLocations = rmfCore.getLocations;
 const getRobots = rmfCore.getRobots;
 const getDoors = rmfCore.getDoors;
 const getLifts = rmfCore.getLifts;
+const getZones = rmfCore.getZones;
+const getNavGraphs = rmfCore.getNavGraphs;
 
 // Delegate connection functions to rmfConnection module
 const initROS2 = rmfConnection.initROS2;
@@ -276,6 +278,8 @@ module.exports = {
   getRobots,
   getDoors,
   getLifts,
+  getZones,
+  getNavGraphs,
   getSubscriptionStats,
   setSubscriptionThrottleInterval,
   getThrottleSettings,

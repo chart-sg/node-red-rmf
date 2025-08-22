@@ -158,8 +158,22 @@ module.exports = function (RED) {
           name: location.name,
           level: location.level,
           x: location.x,
-          y: location.y
+          y: location.y,
+          type: location.type,
+          is_charger: location.is_charger,
+          is_parking_spot: location.is_parking_spot
         })),
+        zones: rmfData.zones ? rmfData.zones.map(zone => ({
+          name: zone.name,
+          level: zone.level,
+          type: zone.type,
+          zone_type: zone.zone_type,
+          center_x: zone.center ? zone.center.x : zone.center_x,
+          center_y: zone.center ? zone.center.y : zone.center_y,
+          zone_vertices: zone.vertices || zone.zone_vertices,
+          graph: zone.graph
+        })) : [],
+        navGraphs: rmfData.navGraphs || [],
         fleets: fleets,
         lastUpdated: rmfData.lastUpdated,
         status: 'ready',

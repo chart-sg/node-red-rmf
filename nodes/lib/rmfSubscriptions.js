@@ -19,7 +19,7 @@ class RMFSubscriptions {
     
     // Data processing throttling - limit how often we actually process the data
     this.processThrottling = {
-      buildingMap: { lastProcessed: 0, interval: 5000 },  // Process every 5 seconds (reduced from 30s for debugging)
+      buildingMap: { lastProcessed: 0, interval: 5000 },  // Process every 5 seconds (nav_graphs subscription)
       fleetState: { lastProcessed: 0, interval: 1000 },   // Process every 1 second (robot positions)
       doorState: { lastProcessed: 0, interval: 1000 },    // Process every 1 second (reduced from 5s for debugging)
       liftState: { lastProcessed: 0, interval: 1000 }     // Process every 1 second (reduced from 5s for debugging)
@@ -27,7 +27,7 @@ class RMFSubscriptions {
     
     // Store latest messages for each type (so we don't lose the most recent data)
     this.latestMessages = {
-      buildingMap: null,
+      buildingMap: null,  // Now stores nav_graphs data instead of service response
       fleetState: {},  // Store by fleet name
       doorState: {},   // Store by door name
       liftState: {}    // Store by lift name
@@ -35,7 +35,7 @@ class RMFSubscriptions {
     
     // Message counters for monitoring
     this.messageCounters = {
-      buildingMap: 0,
+      buildingMap: 0,  // Now counts nav_graphs messages
       fleetState: 0,
       doorState: 0,
       liftState: 0,
@@ -44,7 +44,7 @@ class RMFSubscriptions {
     
     // Processed message counters
     this.processedCounters = {
-      buildingMap: 0,
+      buildingMap: 0,  // Now counts nav_graphs processing
       fleetState: 0,
       doorState: 0,
       liftState: 0,
@@ -61,32 +61,228 @@ class RMFSubscriptions {
     try {
       console.log('RMF: Setting up RMF topic subscriptions...');
 
-      // Setup service clients first
-      await this.setupServiceClients();
+      // Setup nav_graphs subscription first for building map and zone data
+      await this.setupNavGraphsSubscription();
 
-      // Then setup topic subscriptions (excluding nav_graphs/buildingMap)
+      // Then setup other topic subscriptions
       await this.setupFleetStateSubscription();
       await this.setupDoorStateSubscription();
       await this.setupLiftStateSubscription();
       // Setup dynamic event subscription to capture dynamic_event_seq
       await this.setupDynamicEventSubscription();
 
-      // Always use service for building map/locations - but cache to prevent duplicates
-      console.log('RMF: Requesting building map from service (topic subscription removed)...');
-      await this.requestBuildingMapFromService();
-
-      console.log('RMF: All RMF subscriptions setup successfully (using service for building map)');
+      console.log('RMF: All RMF subscriptions setup successfully (using nav_graphs topic for building map and zones)');
 
     } catch (error) {
       console.error('RMF: Failed to setup subscriptions:', error.message);
     }
   }
 
+  async setupNavGraphsSubscription() {
+    try {
+      console.log('RMF: Setting up nav_graphs subscription for building map and zone data...');
+      
+      // Use the correct QoS configuration that works with TRANSIENT_LOCAL
+      const rclnodejs = require('rclnodejs');
+      const qos = new rclnodejs.QoS();
+      qos.reliability = rclnodejs.QoS.ReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_RELIABLE;
+      qos.durability = rclnodejs.QoS.DurabilityPolicy.RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL;
+      qos.history = rclnodejs.QoS.HistoryPolicy.RMW_QOS_POLICY_HISTORY_KEEP_LAST;
+      qos.depth = 10;
+      
+      const subscription = this.rosNode.createSubscription(
+        'rmf_building_map_msgs/msg/Graph',
+        '/nav_graphs',
+        { qos: qos },
+        (msg) => {
+          console.log(`RMF: Received nav_graphs message - Graph: ${msg.name}, Vertices: ${msg.vertices?.length || 0}, Edges: ${msg.edges?.length || 0}, Zones: ${msg.zones?.length || 0}`);
+          // Process immediately since nav_graphs is typically published once at startup
+          this.processNavGraphsData(msg);
+        }
+      );
+      
+      this.subscribers.navGraphs = subscription;
+      console.log('RMF: Nav_graphs subscription created with TRANSIENT_LOCAL QoS');
+      
+    } catch (error) {
+      console.error('RMF: Failed to create nav_graphs subscription:', error.message);
+    }
+  }
+
+  // Process nav_graphs messages (contains building map structure + zone data)
+  // Process nav_graphs data and extract zones and navigation information
+  processNavGraphsData(navGraphMsg) {
+    try {
+      // Update message counters
+      this.messageCounters.buildingMap = (this.messageCounters.buildingMap || 0) + 1;
+      this.processedCounters.buildingMap = (this.processedCounters.buildingMap || 0) + 1;
+      
+      // Always store the latest message
+      this.latestMessages.buildingMap = navGraphMsg;
+      
+      console.log('RMF: Processing nav_graphs data...');
+      
+      // Extract zones, vertices, and edges from the nav_graphs message
+      const zones = navGraphMsg.zones || [];
+      const vertices = navGraphMsg.vertices || [];
+      const edges = navGraphMsg.edges || [];
+      
+      console.log(`RMF: Found ${zones.length} zones, ${vertices.length} vertices (locations), ${edges.length} edges in nav_graphs`);
+      
+      // Process zones
+      if (zones.length > 0) {
+        zones.forEach((zone, idx) => {
+          console.log(`RMF: Zone ${idx + 1}: ${zone.name} (${zone.zone_type}) - Level: ${zone.level}`);
+          console.log(`  Center: (${zone.center_x}, ${zone.center_y}), Size: ${zone.length}x${zone.width}`);
+          console.log(`  Vertices: ${zone.zone_vertices?.length || 0}, Transition lanes: ${zone.zone_transition_lanes?.length || 0}`);
+        });
+      }
+      
+      // Process vertices as locations
+      const locations = [];
+      if (vertices.length > 0) {
+        vertices.forEach((vertex, idx) => {
+          // Extract parameters from vertex params
+          const params = vertex.params || [];
+          const mapNameParam = params.find(p => p.name === 'map_name');
+          const isChargerParam = params.find(p => p.name === 'is_charger');
+          const isParkingSpotParam = params.find(p => p.name === 'is_parking_spot');
+          const isHoldingPointParam = params.find(p => p.name === 'is_holding_point');
+          
+          const location = {
+            name: vertex.name,
+            x: vertex.x || 0,
+            y: vertex.y || 0,
+            yaw: 0, // vertices don't typically have yaw in nav_graphs
+            level_name: mapNameParam ? mapNameParam.value_string : 'L1',
+            graph_index: 0,
+            type: 'waypoint', // default type
+            is_charger: isChargerParam ? isChargerParam.value_bool : false,
+            is_parking_spot: isParkingSpotParam ? isParkingSpotParam.value_bool : false,
+            is_holding_point: isHoldingPointParam ? isHoldingPointParam.value_bool : false,
+            accessible: true,
+            last_updated: new Date().toISOString()
+          };
+          
+          // Determine location type based on parameters
+          if (location.is_charger) {
+            location.type = 'charger';
+          } else if (location.is_parking_spot) {
+            location.type = 'parking';
+          } else if (location.is_holding_point) {
+            location.type = 'holding';
+          }
+          
+          locations.push(location);
+        });
+        
+        console.log(`RMF: Processed ${locations.length} locations from nav_graphs vertices`);
+        locations.forEach((loc, idx) => {
+          console.log(`RMF: Location ${idx + 1}: ${loc.name} (${loc.type}) - Level: ${loc.level_name}, Pos: (${loc.x.toFixed(2)}, ${loc.y.toFixed(2)})`);
+        });
+      }
+      
+      // Update context with zone, location, and navigation data
+      if (!this.context.zones) {
+        this.context.zones = [];
+      }
+      
+      if (!this.context.locations) {
+        this.context.locations = [];
+      }
+      
+      // Clear existing zones and update with new data
+      this.context.zones.length = 0;
+      zones.forEach(zone => {
+        this.context.zones.push({
+          name: zone.name,
+          type: zone.zone_type,
+          level: zone.level,
+          center: {
+            x: zone.center_x,
+            y: zone.center_y
+          },
+          yaw: zone.yaw,
+          dimensions: {
+            length: zone.length,
+            width: zone.width
+          },
+          vertices: zone.zone_vertices || [],
+          transitionLanes: zone.zone_transition_lanes || [],
+          graph: navGraphMsg.name
+        });
+      });
+      
+      // Clear existing locations and update with new data from vertices
+      this.context.locations.length = 0;
+      locations.forEach(location => {
+        this.context.locations.push(location);
+      });
+      
+      // Update navigation graph data
+      if (!this.context.navGraphs) {
+        this.context.navGraphs = [];
+      }
+      
+      // Find existing graph or add new one
+      const existingGraphIndex = this.context.navGraphs.findIndex(g => g.name === navGraphMsg.name);
+      const graphData = {
+        name: navGraphMsg.name,
+        fleet: navGraphMsg.name, // Graph name typically corresponds to fleet name
+        vertices: vertices,
+        edges: edges,
+        zones: zones,
+        lastUpdated: Date.now()
+      };
+      
+      if (existingGraphIndex >= 0) {
+        this.context.navGraphs[existingGraphIndex] = graphData;
+      } else {
+        this.context.navGraphs.push(graphData);
+      }
+      
+      // Also update locations and zones with fleet information
+      this.context.locations.forEach(location => {
+        location.fleet = navGraphMsg.name; // Associate location with fleet
+      });
+      
+      this.context.zones.forEach(zone => {
+        zone.fleet = navGraphMsg.name; // Associate zone with fleet
+      });
+      
+            console.log(`RMF: Updated context with ${zones.length} zones, ${locations.length} locations, and navigation graph '${navGraphMsg.name}'`);
+      
+      // Update the global rmfCore context as well for compatibility
+      const rmfCore = require('./rmfCore');
+      if (rmfCore.updateContextData) {
+        rmfCore.updateContextData('locations', this.context.locations);
+        rmfCore.updateContextData('zones', this.context.zones);
+        rmfCore.updateContextData('navGraphs', this.context.navGraphs);
+      }
+      
+      // Notify context update via callback
+      if (this.contextUpdateCallback) {
+        this.contextUpdateCallback();
+      }
+      
+      // Trigger context update callback
+      if (this.updateCallback) {
+        this.updateCallback();
+      }
+      
+    } catch (error) {
+      console.error('RMF: Failed to process nav_graphs data:', error.message);
+    }
+  }
+
+  // DEPRECATED: Service-based building map methods replaced by nav_graphs subscription
+  // Keeping methods for backward compatibility but they're no longer used in setupAllSubscriptions()
+  
   async setupServiceClients() {
     try {
-      console.log('RMF: Setting up service clients...');
+      console.log('RMF: Setting up service clients... (DEPRECATED - using nav_graphs subscription instead)');
       
-      // Setup building map service client
+      // Setup building map service client (kept for backward compatibility)
       const rclnodejs = require('rclnodejs');
       
       this.serviceClients.buildingMap = this.rosNode.createClient(
@@ -94,7 +290,7 @@ class RMFSubscriptions {
         '/get_building_map'
       );
       
-      console.log('RMF: Building map service client created');
+      console.log('RMF: Building map service client created (but nav_graphs subscription is preferred)');
       
     } catch (error) {
       console.error('RMF: Failed to create service clients:', error.message);
@@ -473,8 +669,8 @@ class RMFSubscriptions {
         messagesReceived: received,
         messagesProcessed: processed,
         messagesSkipped: received - processed,
-        throttleIntervalMs: throttleConfig.interval,
-        lastProcessedTime: throttleConfig.lastProcessed,
+        throttleIntervalMs: throttleConfig ? throttleConfig.interval : 'N/A',
+        lastProcessedTime: throttleConfig ? throttleConfig.lastProcessed : 'N/A',
         processingRate: processed > 0 ? (received / processed).toFixed(2) : 'N/A'
       };
     });
@@ -508,9 +704,11 @@ class RMFSubscriptions {
         Object.values(this.latestMessages.fleetState).forEach(fleetMsg => {
           processFleetStateData(fleetMsg, this.context, this.updateCallback);
         });
+      } else if (subscriptionType === 'buildingMap') {
+        // Process nav_graphs data
+        this.processNavGraphsData(this.latestMessages.buildingMap);
       } else {
         const processor = {
-          buildingMap: processBuildingMapData,
           doorState: processDoorStateData,
           liftState: processLiftStateData
         }[subscriptionType];
@@ -521,9 +719,6 @@ class RMFSubscriptions {
             Object.values(this.latestMessages[subscriptionType]).forEach(msg => {
               processor(msg, this.context, this.updateCallback);
             });
-          } else {
-            // For building map, process the single message
-            processor(this.latestMessages[subscriptionType], this.context, this.updateCallback);
           }
         }
       }
@@ -555,6 +750,64 @@ class RMFSubscriptions {
       };
     });
     return status;
+  }
+
+  // Method to get zone information from nav_graphs
+  getZones() {
+    return this.context.zones || [];
+  }
+
+  // Method to get navigation graphs information
+  getNavGraphs() {
+    return this.context.navGraphs || [];
+  }
+
+  // Method to get zone by name
+  getZoneByName(zoneName) {
+    const zones = this.getZones();
+    return zones.find(zone => zone.name === zoneName);
+  }
+
+  // Method to get zones by type
+  getZonesByType(zoneType) {
+    const zones = this.getZones();
+    return zones.filter(zone => zone.type === zoneType);
+  }
+
+  // Method to get zones by level
+  getZonesByLevel(level) {
+    const zones = this.getZones();
+    return zones.filter(zone => zone.level === level);
+  }
+  
+  // Location accessor methods
+  getLocations() {
+    return this.context.locations || [];
+  }
+  
+  getLocationByName(locationName) {
+    const locations = this.getLocations();
+    return locations.find(location => location.name === locationName);
+  }
+  
+  getLocationsByType(locationType) {
+    const locations = this.getLocations();
+    return locations.filter(location => location.type === locationType);
+  }
+  
+  getLocationsByLevel(level) {
+    const locations = this.getLocations();
+    return locations.filter(location => location.level_name === level);
+  }
+  
+  getChargerLocations() {
+    const locations = this.getLocations();
+    return locations.filter(location => location.is_charger === true);
+  }
+  
+  getParkingLocations() {
+    const locations = this.getLocations();
+    return locations.filter(location => location.is_parking_spot === true);
   }
 }
 

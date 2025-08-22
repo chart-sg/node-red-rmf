@@ -21,6 +21,8 @@ let context = {
   locations: [],
   doors: [],
   lifts: [],
+  zones: [],
+  navGraphs: [],
   buildingMap: null,
   fleetStates: {},
   doorStates: {},
@@ -31,7 +33,9 @@ let context = {
     locations: null,
     robots: null,
     doors: null,
-    lifts: null
+    lifts: null,
+    zones: null,
+    navGraphs: null
   }
 };
 
@@ -83,6 +87,8 @@ function getRMFData() {
     robots: context.robots,
     doors: context.doors,
     lifts: context.lifts,
+    zones: context.zones,
+    navGraphs: context.navGraphs,
     buildingMap: context.buildingMap,
     fleetStates: context.fleetStates,
     doorStates: context.doorStates,
@@ -125,6 +131,14 @@ function getDoorStates() {
 
 function getLiftStates() {
   return context.liftStates;
+}
+
+function getZones() {
+  return context.zones;
+}
+
+function getNavGraphs() {
+  return context.navGraphs;
 }
 
 function getLastUpdated() {
@@ -227,6 +241,8 @@ module.exports = {
   getFleetStates,
   getDoorStates,
   getLiftStates,
+  getZones,
+  getNavGraphs,
   getLastUpdated,
   
   // Data management
