@@ -10,6 +10,7 @@ module.exports = function (RED) {
     node.robot_fleet = config.robot_fleet;
     node.location_name = config.location_name;
     node.zone_type = config.zone_type;
+    node.zone_preferred_waypoint = config.zone_preferred_waypoint;
     node.stubborn_period = config.stubborn_period;
     node.parallel_behaviour = config.parallel_behaviour;
 
@@ -111,6 +112,7 @@ module.exports = function (RED) {
         const robotFleet = msg.rmf_robot_fleet || (msg.payload && msg.payload.robot_fleet) || msg.robot_fleet || node.robot_fleet;
         const locationName = node.location_name || msg.location_name;
         const zoneType = node.zone_type || msg.zone_type || '';
+        const zonePreferredWaypoint = node.zone_preferred_waypoint || msg.zone_preferred_waypoint || '';
         const stubbornPeriod = node.stubborn_period !== undefined ? node.stubborn_period : 
                                (msg.stubborn_period !== undefined ? msg.stubborn_period : 0);
         const parallelBehaviour = node.parallel_behaviour || msg.parallel_behaviour || 'abort';
@@ -141,9 +143,9 @@ module.exports = function (RED) {
           return done();
         }
 
-        // Validate location exists
+        // Validate location exists (check both regular locations and zones)
         const rmfData = rmfContextManager.getRMFData();
-        if (!rmfData || rmfData.locations.length === 0) {
+        if (!rmfData || (rmfData.locations.length === 0 && rmfData.zones.length === 0)) {
           setStatus('red', 'ring', 'No RMF data');
           msg.payload = { 
             status: 'failed', 
@@ -153,8 +155,12 @@ module.exports = function (RED) {
           return done();
         }
 
+        // Check if location is a regular waypoint
         const validatedLocation = rmfData.locations.find(l => l.name === locationName);
-        if (!validatedLocation) {
+        // Check if location is a zone
+        const validatedZone = rmfData.zones.find(z => z.name === locationName);
+        
+        if (!validatedLocation && !validatedZone) {
           setStatus('red', 'ring', 'Location not found');
           msg.payload = { 
             status: 'failed', 
@@ -163,6 +169,9 @@ module.exports = function (RED) {
           send([null, msg, null]); // Send to failed output
           return done();
         }
+
+        // Determine if this is a zone location
+        const isZoneLocation = !!validatedZone;
 
         setStatus('blue', 'dot', 'processing');
 
@@ -254,14 +263,41 @@ module.exports = function (RED) {
           robot_name: robotName,
           robot_fleet: robotFleet,
           location_name: locationName,
-          location_type: validatedLocation.type || 'waypoint',
-          is_charger: validatedLocation.is_charger || false,
+          location_type: isZoneLocation ? 'zone' : (validatedLocation.type || 'waypoint'),
+          is_charger: isZoneLocation ? false : (validatedLocation.is_charger || false),
           zone_type: zoneType,
+          zone_preferred_waypoint: zonePreferredWaypoint,
           stubborn_period: Number(stubbornPeriod),
           parallel_behaviour: parallelBehaviour,
           task_id: taskId,
           dynamic_event_seq: dynamicEventSeq
         };
+
+        // Create appropriate description payload based on location type
+        if (isZoneLocation) {
+          // Create zone-specific description payload
+          const zoneDescription = {
+            zone: locationName
+          };
+
+          // Add zone types if specified
+          if (zoneType && zoneType !== 'default' && zoneType !== '') {
+            zoneDescription.types = [zoneType];
+          }
+
+          // Add preferred waypoint if specified
+          if (zonePreferredWaypoint && zonePreferredWaypoint !== '') {
+            zoneDescription.places = [{
+              waypoint: zonePreferredWaypoint
+            }];
+          }
+
+          // Set the zone description
+          dynamicEventData.description = JSON.stringify(zoneDescription);
+        } else {
+          // Regular waypoint description (existing behavior)
+          dynamicEventData.description = JSON.stringify({ waypoint: locationName });
+        }
 
         // Set up callbacks for goal completion and feedback
         const goalCallbacks = {

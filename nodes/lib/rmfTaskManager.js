@@ -51,88 +51,160 @@ async function createRMFTask(taskData, configNode) {
     const axios = require('axios');
     const { host, port, jwt } = configNode;
     
-    // Create the description for the activity - only include estimate if it exists
-    let description = {};
-    if (taskData.estimate && Object.keys(taskData.estimate).length > 0) {
-      description = { "estimate": taskData.estimate };
-    }
-    
     let taskPayload;
     let endpoint;
     
-    // Check if we have a specific robot or should use dispatch
-    if (taskData.robot_name && taskData.robot_fleet) {
-      // Use robot_task_request for specific robot assignment
-      taskPayload = {
-        "type": "robot_task_request",
-        "robot": taskData.robot_name,
-        "fleet": taskData.robot_fleet,
-        "request": {
-          "category": "compose",
-          "description": {
-            "category": "dynamic_event",
-            "phases": [
-              {
-                "activity": {
-                  "category": "dynamic_event",
-                  "description": description
-                }
-              }
-            ]
-          },
-          "unix_millis_request_time": 0,
-          "unix_millis_earliest_start_time": 0,
-          "requester": "NR"
-        }
+    // Check if this is a zone task (indicated by zone_name or location_type === 'zone')
+    const isZoneTask = taskData.zone_name || taskData.location_type === 'zone' || taskData.is_zone;
+    
+    if (isZoneTask) {
+      // Create zone task payload
+      const zoneName = taskData.zone_name || taskData.location_name;
+      const zoneTypes = taskData.zone_type ? [taskData.zone_type] : ['default'];
+      const places = [];
+      
+      // Add preferred waypoint if specified
+      if (taskData.zone_preferred_waypoint) {
+        places.push({
+          "waypoint": taskData.zone_preferred_waypoint
+        });
+      }
+      
+      const zoneDescription = {
+        "zone": zoneName,
+        "types": zoneTypes
       };
-      endpoint = '/tasks/robot_task';
-    } else if (taskData.robot_fleet) {
-      // Use dispatch_task_request for fleet-based assignment
-      taskPayload = {
-        "type": "dispatch_task_request",
-        "request": {
-          "category": "compose",
-          "description": {
-            "category": "dynamic_event",
-            "phases": [
-              {
-                "activity": {
-                  "category": "dynamic_event",
-                  "description": description
-                }
-              }
-            ]
-          },
-          "fleet_name": taskData.robot_fleet,
-          "unix_millis_request_time": 0,
-          "unix_millis_earliest_start_time": 0,
-          "requester": "NR"
-        }
+      
+      // Only add places if we have any
+      if (places.length > 0) {
+        zoneDescription.places = places;
+      }
+      
+      // Build zone task request
+      const zoneRequest = {
+        "category": "zone",
+        "description": zoneDescription,
+        "unix_millis_request_time": 0,
+        "unix_millis_earliest_start_time": 0,
+        "requester": "NR"
       };
-      endpoint = '/tasks/dispatch_task';
+      
+      // Add priority if specified
+      if (taskData.priority !== undefined) {
+        zoneRequest.priority = {
+          "type": "binary",
+          "value": taskData.priority
+        };
+      }
+      
+      // Check if we have a specific robot or should use dispatch
+      if (taskData.robot_name && taskData.robot_fleet) {
+        // Use robot_task_request for specific robot assignment
+        taskPayload = {
+          "type": "robot_task_request",
+          "robot": taskData.robot_name,
+          "fleet": taskData.robot_fleet,
+          "request": zoneRequest
+        };
+        endpoint = '/tasks/robot_task';
+      } else if (taskData.robot_fleet) {
+        // Use dispatch_task_request for fleet-based assignment
+        zoneRequest.fleet_name = taskData.robot_fleet;
+        taskPayload = {
+          "type": "dispatch_task_request",
+          "request": zoneRequest
+        };
+        endpoint = '/tasks/dispatch_task';
+      } else {
+        // Use general dispatch_task_request when no robot or fleet specified
+        taskPayload = {
+          "type": "dispatch_task_request",
+          "request": zoneRequest
+        };
+        endpoint = '/tasks/dispatch_task';
+      }
     } else {
-      // Use general dispatch_task_request when no robot or fleet specified
-      taskPayload = {
-        "type": "dispatch_task_request",
-        "request": {
-          "category": "compose",
-          "description": {
-            "category": "dynamic_event",
-            "phases": [
-              {
-                "activity": {
-                  "category": "dynamic_event",
-                  "description": description
+      // Create regular dynamic event task payload (existing logic)
+      // Create the description for the activity - only include estimate if it exists
+      let description = {};
+      if (taskData.estimate && Object.keys(taskData.estimate).length > 0) {
+        description = { "estimate": taskData.estimate };
+      }
+      
+      // Check if we have a specific robot or should use dispatch
+      if (taskData.robot_name && taskData.robot_fleet) {
+        // Use robot_task_request for specific robot assignment
+        taskPayload = {
+          "type": "robot_task_request",
+          "robot": taskData.robot_name,
+          "fleet": taskData.robot_fleet,
+          "request": {
+            "category": "compose",
+            "description": {
+              "category": "dynamic_event",
+              "phases": [
+                {
+                  "activity": {
+                    "category": "dynamic_event",
+                    "description": description
+                  }
                 }
-              }
-            ]
-          },
-          "unix_millis_request_time": 0,
-          "unix_millis_earliest_start_time": 0,
-          "requester": "NR"
-        }
-      };
-      endpoint = '/tasks/dispatch_task';
+              ]
+            },
+            "unix_millis_request_time": 0,
+            "unix_millis_earliest_start_time": 0,
+            "requester": "NR"
+          }
+        };
+        endpoint = '/tasks/robot_task';
+      } else if (taskData.robot_fleet) {
+        // Use dispatch_task_request for fleet-based assignment
+        taskPayload = {
+          "type": "dispatch_task_request",
+          "request": {
+            "category": "compose",
+            "description": {
+              "category": "dynamic_event",
+              "phases": [
+                {
+                  "activity": {
+                    "category": "dynamic_event",
+                    "description": description
+                  }
+                }
+              ]
+            },
+            "fleet_name": taskData.robot_fleet,
+            "unix_millis_request_time": 0,
+            "unix_millis_earliest_start_time": 0,
+            "requester": "NR"
+          }
+        };
+        endpoint = '/tasks/dispatch_task';
+      } else {
+        // Use general dispatch_task_request when no robot or fleet specified
+        taskPayload = {
+          "type": "dispatch_task_request",
+          "request": {
+            "category": "compose",
+            "description": {
+              "category": "dynamic_event",
+              "phases": [
+                {
+                  "activity": {
+                    "category": "dynamic_event",
+                    "description": description
+                  }
+                }
+              ]
+            },
+            "unix_millis_request_time": 0,
+            "unix_millis_earliest_start_time": 0,
+            "requester": "NR"
+          }
+        };
+        endpoint = '/tasks/dispatch_task';
+      }
     }
     
     const response = await axios.post(`http://${host}:${port}${endpoint}`, taskPayload, {
@@ -507,10 +579,23 @@ async function sendDynamicEventGoal(goalData, callbacks = {}) {
     } else {
       console.log('RMF: No dynamic_event_seq found in robot context or goalData, using default: 0');
     }
+
+    // Construct description and category
+    let description = goalData.description || JSON.stringify({ waypoint: goalData.location_name });
+    let category = goalData.category || 'go_to_place';
+    
+    // If zone data is detected, update category
+    if (goalData.zone_type && goalData.zone_type !== '') {
+      category = 'zone';
+      console.log(`RMF: Zone dynamic event detected for: ${goalData.location_name}`);
+    } else {
+      console.log(`RMF: Standard dynamic event for waypoint: ${goalData.location_name}`);
+    }
+    
     const goal = {
       event_type: goalData.event_type || 1,
-      category: goalData.category || 'go_to_place',
-      description: goalData.description || JSON.stringify({ waypoint: goalData.location_name }),
+      category: category,
+      description: description,
       dynamic_event_seq: dynamicEventSeq,
       stubborn_period: goalData.stubborn_period || 0.0
     };
