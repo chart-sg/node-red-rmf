@@ -346,50 +346,318 @@ async function softCleanupROS2() {
 }
 
 /**
- * Connect to RMF WebSocket API
+ * Extract meaningful error information from connection errors
+ * @param {Error} error - The connection error
+ * @param {string} connectionUrl - The URL that failed to connect
+ * @returns {Object} Structured error information
+ */
+function extractConnectionError(error, connectionUrl) {
+  // Handle TransportError with nested error details
+  if (error.type === 'TransportError' && error.description && error.description[Symbol.for('kError')]) {
+    const innerError = error.description[Symbol.for('kError')];
+    
+    if (innerError.code === 'ECONNREFUSED') {
+      return {
+        type: 'connection_refused',
+        message: `Cannot connect to RMF Web API at ${connectionUrl}. Please ensure the RMF Web API server is running.`,
+        code: 'ECONNREFUSED',
+        url: connectionUrl,
+        suggestion: 'Start the RMF Web API server or check the connection configuration.'
+      };
+    }
+    
+    if (innerError.code === 'ENOTFOUND') {
+      return {
+        type: 'host_not_found',
+        message: `RMF Web API host not found: ${connectionUrl}. Please check the hostname/IP address.`,
+        code: 'ENOTFOUND',
+        url: connectionUrl,
+        suggestion: 'Verify the host address in the connection configuration.'
+      };
+    }
+    
+    if (innerError.code === 'ETIMEDOUT') {
+      return {
+        type: 'connection_timeout',
+        message: `Connection to RMF Web API timed out: ${connectionUrl}. The server may be overloaded or unreachable.`,
+        code: 'ETIMEDOUT',
+        url: connectionUrl,
+        suggestion: 'Check network connectivity and server status.'
+      };
+    }
+  }
+  
+  // Handle other error types
+  if (error.message && error.message.includes('ECONNREFUSED')) {
+    return {
+      type: 'connection_refused',
+      message: `Cannot connect to RMF Web API at ${connectionUrl}. Please ensure the RMF Web API server is running.`,
+      code: 'ECONNREFUSED',
+      url: connectionUrl,
+      suggestion: 'Start the RMF Web API server or check the connection configuration.'
+    };
+  }
+  
+  // Generic error fallback
+  return {
+    type: 'unknown_connection_error',
+    message: `Failed to connect to RMF Web API at ${connectionUrl}: ${error.message || 'Unknown error'}`,
+    code: error.code || 'UNKNOWN',
+    url: connectionUrl,
+    suggestion: 'Check the RMF Web API server status and connection configuration.'
+  };
+}
+
+/**
+ * Connect to RMF WebSocket API with simple background reconnection
  * @param {Object} config - Connection configuration
  * @param {string} config.host - RMF API host
  * @param {number} config.port - RMF API port
  * @param {string} config.jwt - JWT token for authentication
+ * @param {Object} options - Connection options
+ * @param {number} options.maxRetries - Maximum retry attempts (default: 3)
+ * @param {number} options.retryDelay - Initial retry delay in ms (default: 1000)
+ * @param {boolean} options.enableRetry - Enable automatic retry (default: true)
+ * @param {boolean} options.backgroundReconnect - Enable background reconnection after failure (default: true)
+ * @param {number} options.backgroundInterval - Background reconnection interval in ms (default: 30000)
  * @returns {Promise<Socket>} Connected socket instance
  */
-function connectSocket({ host, port, jwt }) {
+function connectSocket({ host, port, jwt }, options = {}) {
+  const { 
+    maxRetries = 3, 
+    retryDelay = 1000, 
+    enableRetry = true,
+    backgroundReconnect = true,
+    backgroundInterval = 30000
+  } = options;
+  
+  const connectionUrl = `http://${host.replace(/^https?:\/\//, '')}:${port}`;
+  
   return new Promise((resolve, reject) => {
-    // Ensure we're using HTTP (not HTTPS) for the RMF API server
+    let retryCount = 0;
+    let resolved = false;
+    let backgroundReconnectTimer = null;
+    
+    const startBackgroundReconnect = () => {
+      if (!backgroundReconnect || backgroundReconnectTimer) return;
+      
+      console.log(`RMF: Starting background reconnection to ${connectionUrl} (checking every ${backgroundInterval}ms)`);
+      
+      backgroundReconnectTimer = setInterval(async () => {
+        if (resolved) {
+          clearInterval(backgroundReconnectTimer);
+          return;
+        }
+        
+        console.log(`RMF: Background reconnection attempt to ${connectionUrl}...`);
+        
+        try {
+          const socket = io(connectionUrl, {
+            auth: { token: jwt },
+            transports: ['websocket', 'polling'],
+            timeout: 5000,
+            reconnection: false,
+            forceNew: true
+          });
+          
+          const success = await new Promise((resolveAttempt) => {
+            let attemptResolved = false;
+            
+            const cleanup = () => {
+              if (!attemptResolved) {
+                attemptResolved = true;
+                socket.removeAllListeners();
+                socket.close();
+              }
+            };
+            
+            const timer = setTimeout(() => {
+              cleanup();
+              resolveAttempt(false);
+            }, 5000);
+            
+            socket.on('connect', () => {
+              if (!attemptResolved) {
+                attemptResolved = true;
+                clearTimeout(timer);
+                resolveAttempt(socket);
+              }
+            });
+            
+            socket.on('connect_error', () => {
+              cleanup();
+              clearTimeout(timer);
+              resolveAttempt(false);
+            });
+            
+            socket.on('error', () => {
+              cleanup();
+              clearTimeout(timer);
+              resolveAttempt(false);
+            });
+          });
+          
+          if (success && !resolved) {
+            resolved = true;
+            clearInterval(backgroundReconnectTimer);
+            console.log(`RMF: Background reconnection successful to ${connectionUrl}`);
+            context.socket = success;
+            rmfEvents.emit('socket_connected', success);
+            resolve(success);
+          }
+        } catch (error) {
+          // Silent fail for background attempts
+        }
+      }, backgroundInterval);
+    };
+    
+    const attemptConnection = () => {
+      if (resolved) return;
+      
+      if (retryCount === 0) {
+        console.log(`RMF: Attempting to connect to ${connectionUrl}...`);
+      } else {
+        console.log(`RMF: Retry attempt ${retryCount}/${maxRetries} to connect to ${connectionUrl}...`);
+      }
+      
+      const socket = io(connectionUrl, {
+        auth: { token: jwt },
+        transports: ['websocket', 'polling'],
+        timeout: 10000,
+        reconnection: false,
+        forceNew: true
+      });
+      
+      let connectionResolved = false;
+      
+      socket.on('connect', () => {
+        if (!connectionResolved && !resolved) {
+          connectionResolved = true;
+          resolved = true;
+          console.log(`RMF: Successfully connected to ${connectionUrl}${retryCount > 0 ? ` (after ${retryCount} retries)` : ''}`);
+          context.socket = socket;
+          rmfEvents.emit('socket_connected', socket);
+          resolve(socket);
+        }
+      });
+      
+      socket.on('connect_error', (error) => {
+        if (!connectionResolved && !resolved) {
+          connectionResolved = true;
+          
+          const errorInfo = extractConnectionError(error, connectionUrl);
+          
+          if (enableRetry && retryCount < maxRetries) {
+            retryCount++;
+            const nextDelay = retryDelay * Math.pow(2, retryCount - 1);
+            
+            console.warn(`RMF: ${errorInfo.message} (attempt ${retryCount}/${maxRetries + 1})`);
+            console.log(`RMF: Retrying in ${nextDelay}ms...`);
+            
+            socket.removeAllListeners();
+            socket.close();
+            
+            setTimeout(attemptConnection, nextDelay);
+          } else {
+            console.error(`RMF: ${errorInfo.message} (failed after ${retryCount + 1} attempts)`);
+            
+            rmfEvents.emit('socket_error', {
+              ...errorInfo,
+              retryCount,
+              maxRetries,
+              finalFailure: true,
+              originalError: error
+            });
+            
+            socket.removeAllListeners();
+            socket.close();
+            
+            // Start background reconnection instead of rejecting
+            if (backgroundReconnect) {
+              console.log(`RMF: Starting background reconnection...`);
+              startBackgroundReconnect();
+              // Don't reject - let background reconnection handle it
+            } else {
+              resolved = true;
+              reject(new Error(`${errorInfo.message} (failed after ${retryCount + 1} attempts)`));
+            }
+          }
+        }
+      });
+      
+      socket.on('disconnect', (reason) => {
+        console.log(`RMF: Disconnected from ${connectionUrl}. Reason: ${reason}`);
+        rmfEvents.emit('socket_disconnected', { reason, url: connectionUrl });
+        
+        // Start background reconnection on disconnect
+        if (backgroundReconnect && !backgroundReconnectTimer) {
+          console.log(`RMF: Connection lost, starting background reconnection...`);
+          resolved = false; // Allow background reconnection to resolve
+          startBackgroundReconnect();
+        }
+      });
+      
+      socket.on('error', (error) => {
+        if (!connectionResolved) {
+          const errorInfo = extractConnectionError(error, connectionUrl);
+          console.error(`RMF: Socket error: ${errorInfo.message}`);
+          rmfEvents.emit('socket_error', {
+            ...errorInfo,
+            originalError: error
+          });
+        }
+      });
+    };
+    
+    attemptConnection();
+  });
+}
+
+/**
+ * Check if RMF Web API is available
+ * @param {Object} config - Connection configuration
+ * @param {string} config.host - RMF API host
+ * @param {number} config.port - RMF API port
+ * @param {number} timeout - Timeout in milliseconds (default: 5000)
+ * @returns {Promise<boolean>} True if API is available
+ */
+async function checkRMFWebAPIAvailability({ host, port }, timeout = 5000) {
+  return new Promise((resolve) => {
     const connectionUrl = `http://${host.replace(/^https?:\/\//, '')}:${port}`;
-    console.log(`RMF: Attempting to connect to ${connectionUrl}...`);
+    
+    console.log(`RMF: Checking Web API availability at ${connectionUrl}...`);
     
     const socket = io(connectionUrl, {
-      auth: { token: jwt },
       transports: ['websocket', 'polling'],
-      timeout: 10000,
-      reconnection: true,
-      reconnectionDelay: 1000,
-      reconnectionAttempts: 5,
+      timeout: timeout,
+      reconnection: false,
       forceNew: true
     });
     
+    const timer = setTimeout(() => {
+      socket.close();
+      console.log(`RMF: Web API availability check timed out for ${connectionUrl}`);
+      resolve(false);
+    }, timeout);
+    
     socket.on('connect', () => {
-      console.log(`RMF: Successfully connected to ${connectionUrl}`);
-      context.socket = socket;
-      rmfEvents.emit('socket_connected', socket);
-      resolve(socket);
+      clearTimeout(timer);
+      socket.close();
+      console.log(`RMF: Web API is available at ${connectionUrl}`);
+      resolve(true);
     });
     
-    socket.on('connect_error', (error) => {
-      console.error(`RMF: Connection error to ${connectionUrl}:`, error);
-      rmfEvents.emit('socket_error', error);
-      reject(new Error(`Socket connection failed: ${error.message || error}`));
+    socket.on('connect_error', () => {
+      clearTimeout(timer);
+      socket.close();
+      console.log(`RMF: Web API is not available at ${connectionUrl}`);
+      resolve(false);
     });
     
-    socket.on('disconnect', (reason) => {
-      console.log(`RMF: Disconnected from ${connectionUrl}. Reason: ${reason}`);
-      rmfEvents.emit('socket_disconnected', reason);
-    });
-    
-    socket.on('error', (error) => {
-      console.error(`RMF: Socket error:`, error);
-      rmfEvents.emit('socket_error', error);
+    socket.on('error', () => {
+      clearTimeout(timer);
+      socket.close();
+      resolve(false);
     });
   });
 }
@@ -500,6 +768,7 @@ module.exports = {
   // Core initialization
   initROS2,
   connectSocket,
+  checkRMFWebAPIAvailability,
   debugROS2Node,
   
   // Subscription management
