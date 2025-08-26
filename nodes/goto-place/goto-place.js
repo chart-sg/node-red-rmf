@@ -107,12 +107,34 @@ module.exports = function (RED) {
           return done();
         }
 
+        // Helper function to get meaningful value (not empty, undefined, or null)
+        function getMeaningfulValue(...values) {
+          for (const value of values) {
+            if (value && value !== '') {
+              return value;
+            }
+          }
+          return undefined;
+        }
+        
         // Get configuration values (prefer RMF metadata, then payload, then direct message, then node config)
         const robotName = msg.rmf_robot_name || (msg.payload && msg.payload.robot_name) || msg.robot_name || node.robot_name;
         const robotFleet = msg.rmf_robot_fleet || (msg.payload && msg.payload.robot_fleet) || msg.robot_fleet || node.robot_fleet;
         const locationName = node.location_name || msg.location_name;
-        const zoneType = node.zone_type || msg.zone_type || '';
-        const zonePreferredWaypoint = node.zone_preferred_waypoint || msg.zone_preferred_waypoint || '';
+        
+        // Zone parameters - only use if explicitly specified (not empty/undefined)
+        const zoneType = getMeaningfulValue(msg.zone_type, (msg.payload && msg.payload.zone_type), node.zone_type);
+        const zonePreferredWaypoint = getMeaningfulValue(msg.zone_preferred_waypoint, (msg.payload && msg.payload.zone_preferred_waypoint), node.zone_preferred_waypoint);
+        
+        // Debug logging for zone inputs
+        console.log(`[GOTO-PLACE] Zone input processing:`, {
+          nodeZoneType: node.zone_type,
+          msgZoneType: msg.zone_type,
+          resolvedZoneType: zoneType,
+          nodeZonePreferredWaypoint: node.zone_preferred_waypoint,
+          msgZonePreferredWaypoint: msg.zone_preferred_waypoint,
+          resolvedZonePreferredWaypoint: zonePreferredWaypoint
+        });
         const stubbornPeriod = node.stubborn_period !== undefined ? node.stubborn_period : 
                                (msg.stubborn_period !== undefined ? msg.stubborn_period : 0);
         const parallelBehaviour = node.parallel_behaviour || msg.parallel_behaviour || 'abort';
@@ -155,21 +177,219 @@ module.exports = function (RED) {
           return done();
         }
 
+        // Comprehensive validation for resolved input values
+        // 1) Validate robot name is in available robot names
+        console.log(`[GOTO-PLACE] Getting robots from rmfContextManager...`);
+        const allRobots = rmfContextManager.getRobots() || [];
+        const availableRobots = allRobots.map(robot => robot.name);
+        
+        console.log(`[GOTO-PLACE] Available robots from rmfContextManager: [${availableRobots.join(', ')}]`);
+        console.log(`[GOTO-PLACE] Validating robot "${robotName}" against available robots`);
+        
+        // If no robots are available, skip robot validation (RMF might still be initializing)
+        if (availableRobots.length === 0) {
+          console.log(`[GOTO-PLACE] No robots available in rmfContextManager, skipping robot validation`);
+        } else if (robotName && !availableRobots.includes(robotName)) {
+          setStatus('red', 'ring', 'Invalid robot name');
+          msg.payload = { 
+            status: 'failed', 
+            reason: `Robot name "${robotName}" not found in available robots: [${availableRobots.join(', ')}]` 
+          };
+          send([null, msg, null]);
+          return done();
+        }
+
+        // 2) Validate robot fleet is in available robot fleets
+        const availableFleets = [...new Set(allRobots.map(robot => robot.fleet))];
+        
+        console.log(`[GOTO-PLACE] Available fleets: [${availableFleets.join(', ')}]`);
+        
+        // If no fleets are available, skip fleet validation (RMF might still be initializing)
+        if (availableFleets.length === 0) {
+          console.log(`[GOTO-PLACE] No fleets available in rmfContextManager, skipping fleet validation`);
+        } else if (robotFleet && !availableFleets.includes(robotFleet)) {
+          setStatus('red', 'ring', 'Invalid robot fleet');
+          msg.payload = { 
+            status: 'failed', 
+            reason: `Robot fleet "${robotFleet}" not found in available fleets: [${availableFleets.join(', ')}]` 
+          };
+          send([null, msg, null]);
+          return done();
+        }
+
+        // 3) Validate robot name belongs to the specified fleet
+        if (robotName && robotFleet && allRobots.length > 0) {
+          const robotsInFleet = allRobots.filter(robot => robot.fleet === robotFleet).map(robot => robot.name);
+          
+          console.log(`[GOTO-PLACE] Robots in fleet "${robotFleet}": [${robotsInFleet.join(', ')}]`);
+          
+          if (!robotsInFleet.includes(robotName)) {
+            setStatus('red', 'ring', 'Robot not in fleet');
+            msg.payload = { 
+              status: 'failed', 
+              reason: `Robot "${robotName}" not found in fleet "${robotFleet}". Available robots in fleet: [${robotsInFleet.join(', ')}]` 
+            };
+            send([null, msg, null]);
+            return done();
+          }
+        }
+
         // Check if location is a regular waypoint
         const validatedLocation = rmfData.locations.find(l => l.name === locationName);
         // Check if location is a zone
         const validatedZone = rmfData.zones.find(z => z.name === locationName);
-        
-        if (!validatedLocation && !validatedZone) {
-          setStatus('red', 'ring', 'Location not found');
+
+        console.log(`[GOTO-PLACE] Location validation for "${locationName}":`, {
+          isLocation: !!validatedLocation,
+          isZone: !!validatedZone,
+          locationData: validatedLocation,
+          zoneData: validatedZone,
+          allZoneNames: rmfData.zones.map(z => z.name)
+        });
+
+        // 4) Validate location name is in available locations (waypoint or zone)
+        if (locationName && !validatedLocation && !validatedZone) {
+          const allLocationNames = [
+            ...rmfData.locations.map(l => l.name),
+            ...rmfData.zones.map(z => z.name)
+          ];
+          setStatus('red', 'ring', 'Invalid location');
           msg.payload = { 
             status: 'failed', 
-            reason: `Location "${locationName}" not found in RMF data` 
+            reason: `Location "${locationName}" not found in available locations: [${allLocationNames.join(', ')}]` 
           };
-          send([null, msg, null]); // Send to failed output
+          send([null, msg, null]);
           return done();
         }
 
+        // 5) Validate location is accessible by the specified fleet
+        if (locationName && robotFleet) {
+          // For regular waypoints, check if fleet can access the location
+          if (validatedLocation && validatedLocation.fleet_compatibility) {
+            if (!validatedLocation.fleet_compatibility.includes(robotFleet)) {
+              setStatus('red', 'ring', 'Fleet cannot access location');
+              msg.payload = { 
+                status: 'failed', 
+                reason: `Fleet "${robotFleet}" cannot access location "${locationName}". Compatible fleets: [${validatedLocation.fleet_compatibility.join(', ')}]` 
+              };
+              send([null, msg, null]);
+              return done();
+            }
+          }
+          
+          // For zones, check if fleet can access the zone
+          if (validatedZone && validatedZone.fleet_compatibility) {
+            if (!validatedZone.fleet_compatibility.includes(robotFleet)) {
+              setStatus('red', 'ring', 'Fleet cannot access zone');
+              msg.payload = { 
+                status: 'failed', 
+                reason: `Fleet "${robotFleet}" cannot access zone "${locationName}". Compatible fleets: [${validatedZone.fleet_compatibility.join(', ')}]` 
+              };
+              send([null, msg, null]);
+              return done();
+            }
+          }
+        }
+
+        // 6) If location is waypoint type, ignore zone-specific inputs
+        if (validatedLocation && (msg.zone_type || msg.zone_preferred_waypoint)) {
+          console.log(`[GOTO-PLACE] Warning: Location "${locationName}" is a waypoint, ignoring zone_type and zone_preferred_waypoint inputs`);
+          // We don't fail here, just ignore the zone inputs for waypoints
+        }
+
+        // 7) Validate zone_type is available for the zone
+        if (zoneType && zoneType !== 'default' && validatedZone) {
+          // Helper function to get zone vertices (same logic as form)
+          function getZoneVertices(zone) {
+            return zone.vertices || zone.zone_vertices || [];
+          }
+          
+          // Extract zone types from zone vertices placement property
+          const zoneVertices = getZoneVertices(validatedZone);
+          const placementBasedTypes = [];
+          
+          zoneVertices.forEach(vertex => {
+            if (vertex && vertex.placement && vertex.placement !== 'default') {
+              placementBasedTypes.push(vertex.placement);
+            }
+          });
+          
+          // Remove duplicates from placement-based types
+          const uniquePlacementTypes = [...new Set(placementBasedTypes)];
+          
+          // Add special zone types that are not placement-based
+          const specialZoneTypes = ['patient_facing'];
+          
+          // Combine placement-based types with special types, avoiding duplicates
+          const allAvailableTypes = [...uniquePlacementTypes];
+          specialZoneTypes.forEach(specialType => {
+            if (!allAvailableTypes.includes(specialType)) {
+              allAvailableTypes.push(specialType);
+            }
+          });
+          
+          console.log(`[GOTO-PLACE] Zone type validation for zone "${locationName}":`, {
+            requestedZoneType: zoneType,
+            placementBasedTypes: uniquePlacementTypes,
+            specialZoneTypes: specialZoneTypes,
+            allAvailableTypes: allAvailableTypes,
+            zoneVertices: zoneVertices,
+            zoneData: validatedZone
+          });
+          
+          if (allAvailableTypes.length === 0) {
+            console.log(`[GOTO-PLACE] Warning: No zone types found for zone "${locationName}", skipping zone type validation`);
+          } else if (!allAvailableTypes.includes(zoneType)) {
+            setStatus('red', 'ring', 'Invalid zone type');
+            msg.payload = { 
+              status: 'failed', 
+              reason: `Zone type "${zoneType}" not available for zone "${locationName}". Available types: [${allAvailableTypes.join(', ')}]` 
+            };
+            send([null, msg, null]);
+            return done();
+          } else {
+            console.log(`[GOTO-PLACE] Zone type "${zoneType}" is valid for zone "${locationName}"`);
+          }
+        }
+
+        // 8) Validate zone_preferred_waypoint is available for the zone
+        if (zonePreferredWaypoint && validatedZone) {
+          // Helper function to get zone vertices (same logic as form)
+          function getZoneVertices(zone) {
+            return zone.vertices || zone.zone_vertices || [];
+          }
+          
+          // Get all internal waypoints for the zone
+          const allInternalWaypoints = [];
+          const zoneVertices = getZoneVertices(validatedZone);
+          
+          zoneVertices.forEach(vertex => {
+            if (vertex && vertex.waypoints) {
+              allInternalWaypoints.push(...vertex.waypoints);
+            }
+            // Also check if vertex has a name directly (it might be a waypoint itself)
+            if (vertex && vertex.name && typeof vertex.name === 'string') {
+              allInternalWaypoints.push(vertex.name);
+            }
+          });
+          
+          console.log(`[GOTO-PLACE] Zone waypoint validation for zone "${locationName}":`, {
+            requestedWaypoint: zonePreferredWaypoint,
+            allInternalWaypoints: allInternalWaypoints,
+            zoneVertices: zoneVertices
+          });
+          
+          if (!allInternalWaypoints.includes(zonePreferredWaypoint)) {
+            setStatus('red', 'ring', 'Invalid zone waypoint');
+            msg.payload = { 
+              status: 'failed', 
+              reason: `Zone preferred waypoint "${zonePreferredWaypoint}" not available for zone "${locationName}". Available waypoints: [${allInternalWaypoints.join(', ')}]` 
+            };
+            send([null, msg, null]);
+            return done();
+          }
+        }
+        
         // Determine if this is a zone location
         const isZoneLocation = !!validatedZone;
 
@@ -265,13 +485,17 @@ module.exports = function (RED) {
           location_name: locationName,
           location_type: isZoneLocation ? 'zone' : (validatedLocation.type || 'waypoint'),
           is_charger: isZoneLocation ? false : (validatedLocation.is_charger || false),
-          zone_type: zoneType,
-          zone_preferred_waypoint: zonePreferredWaypoint,
           stubborn_period: Number(stubbornPeriod),
           parallel_behaviour: parallelBehaviour,
           task_id: taskId,
           dynamic_event_seq: dynamicEventSeq
         };
+
+        // Only add zone-related fields if this is actually a zone location
+        if (isZoneLocation) {
+          dynamicEventData.zone_type = zoneType;
+          dynamicEventData.zone_preferred_waypoint = zonePreferredWaypoint;
+        }
 
         // Create appropriate description payload based on location type
         if (isZoneLocation) {
@@ -280,17 +504,28 @@ module.exports = function (RED) {
             zone: locationName
           };
 
-          // Add zone types if specified
-          if (zoneType && zoneType !== 'default' && zoneType !== '') {
+          console.log(`[GOTO-PLACE] Creating zone description for zone "${locationName}":`, {
+            zoneType: zoneType,
+            zoneTypeValid: zoneType && zoneType !== 'default',
+            zonePreferredWaypoint: zonePreferredWaypoint,
+            zonePreferredWaypointValid: !!zonePreferredWaypoint
+          });
+
+          // Add zone types if specified (and not 'default' which means no zone type)
+          if (zoneType && zoneType !== 'default') {
             zoneDescription.types = [zoneType];
+            console.log(`[GOTO-PLACE] Added zone type "${zoneType}" to description`);
           }
 
           // Add preferred waypoint if specified
-          if (zonePreferredWaypoint && zonePreferredWaypoint !== '') {
+          if (zonePreferredWaypoint) {
             zoneDescription.places = [{
               waypoint: zonePreferredWaypoint
             }];
+            console.log(`[GOTO-PLACE] Added preferred waypoint "${zonePreferredWaypoint}" to description`);
           }
+
+          console.log(`[GOTO-PLACE] Final zone description:`, zoneDescription);
 
           // Set the zone description
           dynamicEventData.description = JSON.stringify(zoneDescription);

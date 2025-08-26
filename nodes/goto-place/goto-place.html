@@ -36,7 +36,8 @@
         'left': 'Left', 
         'right': 'Right',
         'top': 'Top',
-        'bottom': 'Bottom'
+        'bottom': 'Bottom',
+        'patient_facing': 'Patient Facing'
       };
       
       // Initialize
@@ -340,34 +341,51 @@
         if (zone) {
           const zoneVertices = getZoneVertices(zone);
           
-          // Extract unique placement types from zone vertices
-          const placements = new Set();
+          // Extract placement types from zone vertices (excluding 'default')
+          const placementBasedTypes = [];
           zoneVertices.forEach(vertex => {
-            if (vertex.placement) {
-              placements.add(vertex.placement);
+            if (vertex.placement && vertex.placement !== 'default') {
+              placementBasedTypes.push(vertex.placement);
             }
           });
           
-          // Add placement options
-          if (placements.size > 0) {
-            Array.from(placements).forEach(placement => {
-              const label = PLACEMENT_LABELS[placement] || placement;
-              select.append(`<option value="${placement}">${label}</option>`);
-            });
-          } else {
-            // Fallback if no placement data
-            select.append('<option value="default">Default</option>');
+          // Remove duplicates from placement-based types
+          const uniquePlacementTypes = [...new Set(placementBasedTypes)];
+          
+          // Add special zone types that are not placement-based
+          const specialZoneTypes = ['patient_facing'];
+          
+          // Combine placement-based types with special types, avoiding duplicates
+          const allAvailableTypes = [...uniquePlacementTypes];
+          specialZoneTypes.forEach(specialType => {
+            if (!allAvailableTypes.includes(specialType)) {
+              allAvailableTypes.push(specialType);
+            }
+          });
+          
+          // Always add default option first
+          select.append('<option value="default">Default</option>');
+          
+          // Add placement and special options
+          allAvailableTypes.forEach(placement => {
+            const label = PLACEMENT_LABELS[placement] || placement;
+            select.append(`<option value="${placement}">${label}</option>`);
+          });
+          
+          // If no types found, add fallback options
+          if (allAvailableTypes.length === 0) {
+            select.append('<option value="center">Center</option>');
+            select.append('<option value="left">Left</option>');
+            select.append('<option value="right">Right</option>');
           }
         } else {
-          // Fallback zone types
+          // Fallback zone types when no zone data available
           select.append('<option value="default">Default</option>');
           select.append('<option value="center">Center</option>');
           select.append('<option value="left">Left</option>');
           select.append('<option value="right">Right</option>');
+          select.append('<option value="patient_facing">Patient Facing</option>');
         }
-        
-        // Always add Patient Facing option
-        select.append('<option value="patient_facing">Patient Facing</option>');
         
         // Restore previous value
         select.val(currentValue || node.zone_type || 'default');
