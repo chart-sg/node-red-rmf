@@ -8,7 +8,7 @@
       robot_name: { value: '' },
       robot_fleet: { value: '' },
       location_name: { value: '' },
-      zone_type: { value: 'default' },
+      zone_type: { value: 'all' },
       zone_preferred_waypoint: { value: '' },
       stubborn_period: { value: 0 },
       parallel_behaviour: { value: 'abort' }
@@ -31,13 +31,22 @@
       
       // Constants
       const PLACEMENT_LABELS = {
-        'default': 'Default',
+        'all': 'All',
         'center': 'Center',
         'left': 'Left', 
         'right': 'Right',
         'top': 'Top',
         'bottom': 'Bottom',
         'patient_facing': 'Patient Facing'
+      };
+      
+      // Mapping from waypoint placement to zone type
+      const PLACEMENT_TO_ZONE_TYPE = {
+        'left': 'left',
+        'right': 'right',
+        'center': 'center',
+        'forward': 'top',
+        'backward': 'bottom'
       };
       
       // Initialize
@@ -324,7 +333,7 @@
         } else {
           zoneTypeRow.hide();
           zoneWaypointRow.hide();
-          $('#node-input-zone_type').val('default');
+          $('#node-input-zone_type').val('all');
           $('#node-input-zone_preferred_waypoint').val('');
         }
       }
@@ -341,11 +350,15 @@
         if (zone) {
           const zoneVertices = getZoneVertices(zone);
           
-          // Extract placement types from zone vertices (excluding 'default')
+          // Extract placement types from zone vertices and map to zone types
           const placementBasedTypes = [];
           zoneVertices.forEach(vertex => {
-            if (vertex.placement && vertex.placement !== 'default') {
-              placementBasedTypes.push(vertex.placement);
+            if (vertex.placement) {
+              // Map waypoint placement to zone type
+              const zoneType = PLACEMENT_TO_ZONE_TYPE[vertex.placement] || vertex.placement;
+              if (zoneType && zoneType !== 'default') {
+                placementBasedTypes.push(zoneType);
+              }
             }
           });
           
@@ -363,13 +376,13 @@
             }
           });
           
-          // Always add default option first
-          select.append('<option value="default">Default</option>');
+          // Always add "All" option first
+          select.append('<option value="all">All</option>');
           
           // Add placement and special options
-          allAvailableTypes.forEach(placement => {
-            const label = PLACEMENT_LABELS[placement] || placement;
-            select.append(`<option value="${placement}">${label}</option>`);
+          allAvailableTypes.forEach(zoneType => {
+            const label = PLACEMENT_LABELS[zoneType] || zoneType;
+            select.append(`<option value="${zoneType}">${label}</option>`);
           });
           
           // If no types found, add fallback options
@@ -380,22 +393,24 @@
           }
         } else {
           // Fallback zone types when no zone data available
-          select.append('<option value="default">Default</option>');
+          select.append('<option value="all">All</option>');
           select.append('<option value="center">Center</option>');
           select.append('<option value="left">Left</option>');
           select.append('<option value="right">Right</option>');
+          select.append('<option value="top">Top</option>');
+          select.append('<option value="bottom">Bottom</option>');
           select.append('<option value="patient_facing">Patient Facing</option>');
         }
         
         // Restore previous value
-        select.val(currentValue || node.zone_type || 'default');
+        select.val(currentValue || node.zone_type || 'all');
       }
       
       function populateZoneWaypointDropdown(zoneName) {
         const select = $('#node-input-zone_preferred_waypoint');
         const currentValue = select.val();
         
-        select.empty().append('<option value="">Auto (Use Zone Type)</option>');
+        select.empty().append('<option value="">None</option>');
         
         // Find the zone data
         const zone = node.rmfData.zones ? node.rmfData.zones.find(z => z.name === zoneName) : null;
@@ -417,11 +432,7 @@
                 vertexValue = vertex.name;
                 displayName = vertexName;
                 
-                // Add placement info if available
-                if (vertex.placement) {
-                  const label = PLACEMENT_LABELS[vertex.placement] || vertex.placement;
-                  displayName = `${vertexName} (${label})`;
-                }
+                // Don't add placement info - just use the vertex name
               } else if (typeof vertex === 'number') {
                 // Vertex index - find corresponding vertex name from navGraphs
                 const graph = node.rmfData.navGraphs ? node.rmfData.navGraphs.find(g => 
@@ -567,22 +578,22 @@
   </div>
   
   <div class="form-row">
-    <label for="node-input-zone_type">Zone Type (RMF 2.0)</label>
+    <label for="node-input-zone_type">Zone Type </label>
     <select id="node-input-zone_type" style="width: 100%;">
-      <option value="default">Default</option>
-      <option value="patient_facing">Patient Facing</option>
-      <option value="bottom">Bottom</option>
-      <option value="center">Center</option>
+      <option value="all">All</option>
       <option value="left">Left</option>
       <option value="right">Right</option>
+      <option value="center">Center</option>
       <option value="top">Top</option>
+      <option value="bottom">Bottom</option>
+      <option value="patient_facing">Patient Facing</option>
     </select>
   </div>
   
   <div class="form-row">
     <label for="node-input-zone_preferred_waypoint">Zone Preferred Waypoint</label>
     <select id="node-input-zone_preferred_waypoint" style="width: 100%;">
-      <option value="">Auto (Use Zone Type)</option>
+      <option value="">None</option>
     </select>
   </div>
   
@@ -619,10 +630,10 @@
     <dd>The destination location or zone name. Locations from nav graphs and zones are shown. Use "Use msg.location_name" to pass via message.</dd>
     
     <dt>Zone Type</dt>
-    <dd>For zone locations, specifies the placement within the zone (Default, Left, Right, Patient Facing, etc.). Only visible when a zone is selected.</dd>
+    <dd>For zone locations, specifies the placement within the zone (All, Left, Right, Center, Top, Bottom, Patient Facing, etc.). Only visible when a zone is selected.</dd>
     
     <dt>Zone Preferred Waypoint</dt>
-    <dd>For zone locations, allows selection of a specific waypoint within the zone. Only visible when a zone is selected. Use "Auto" to let the system choose based on zone type.</dd>
+    <dd>For zone locations, allows selection of a specific waypoint within the zone. Only visible when a zone is selected. Use "None" to let the system choose based on zone type.</dd>
     
     <dt>Stubborn Period</dt>
     <dd>Time in seconds that the robot will attempt to reach the location before giving up (default: 0 = no limit).</dd>
@@ -647,7 +658,7 @@
     <dd>The destination location name. Overrides node configuration if provided.</dd>
     
     <dt>msg.zone_type <span class="property-type">string</span></dt>
-    <dd>For zone locations, the placement type (default, left, right, patient_facing, etc.).</dd>
+    <dd>For zone locations, the placement type (all, left, right, center, top, bottom, patient_facing, etc.).</dd>
     
     <dt>msg.zone_preferred_waypoint <span class="property-type">string</span></dt>
     <dd>For zone locations, specific waypoint name within the zone.</dd>

@@ -107,10 +107,10 @@ module.exports = function (RED) {
           return done();
         }
 
-        // Helper function to get meaningful value (not empty, undefined, or null)
+        // Helper function to get meaningful value (not empty, undefined, null, 'all', or 'auto')
         function getMeaningfulValue(...values) {
           for (const value of values) {
-            if (value && value !== '') {
+            if (value && value !== '' && value !== 'all' && value !== 'auto') {
               return value;
             }
           }
@@ -297,20 +297,33 @@ module.exports = function (RED) {
           // We don't fail here, just ignore the zone inputs for waypoints
         }
 
-        // 7) Validate zone_type is available for the zone
-        if (zoneType && zoneType !== 'default' && validatedZone) {
+        // 7) Validate zone_type is available for the zone (skip if 'all')
+        if (zoneType && zoneType !== 'all' && validatedZone) {
           // Helper function to get zone vertices (same logic as form)
           function getZoneVertices(zone) {
             return zone.vertices || zone.zone_vertices || [];
           }
           
-          // Extract zone types from zone vertices placement property
+          // Extract zone types from zone vertices placement property and map to zone types
           const zoneVertices = getZoneVertices(validatedZone);
           const placementBasedTypes = [];
           
+          // Mapping from waypoint placement to zone type
+          const PLACEMENT_TO_ZONE_TYPE = {
+            'left': 'left',
+            'right': 'right',
+            'center': 'center',
+            'forward': 'top',
+            'backward': 'bottom'
+          };
+          
           zoneVertices.forEach(vertex => {
-            if (vertex && vertex.placement && vertex.placement !== 'default') {
-              placementBasedTypes.push(vertex.placement);
+            if (vertex && vertex.placement) {
+              // Map waypoint placement to zone type
+              const zoneTypeFromPlacement = PLACEMENT_TO_ZONE_TYPE[vertex.placement] || vertex.placement;
+              if (zoneTypeFromPlacement && zoneTypeFromPlacement !== 'all') {
+                placementBasedTypes.push(zoneTypeFromPlacement);
+              }
             }
           });
           
@@ -352,8 +365,8 @@ module.exports = function (RED) {
           }
         }
 
-        // 8) Validate zone_preferred_waypoint is available for the zone
-        if (zonePreferredWaypoint && validatedZone) {
+        // 8) Validate zone_preferred_waypoint is available for the zone (skip if 'auto' or empty)
+        if (zonePreferredWaypoint && zonePreferredWaypoint !== 'auto' && zonePreferredWaypoint !== '' && validatedZone) {
           // Helper function to get zone vertices (same logic as form)
           function getZoneVertices(zone) {
             return zone.vertices || zone.zone_vertices || [];
@@ -506,13 +519,13 @@ module.exports = function (RED) {
 
           console.log(`[GOTO-PLACE] Creating zone description for zone "${locationName}":`, {
             zoneType: zoneType,
-            zoneTypeValid: zoneType && zoneType !== 'default',
+            zoneTypeValid: zoneType && zoneType !== 'all',
             zonePreferredWaypoint: zonePreferredWaypoint,
             zonePreferredWaypointValid: !!zonePreferredWaypoint
           });
 
-          // Add zone types if specified (and not 'default' which means no zone type)
-          if (zoneType && zoneType !== 'default') {
+          // Add zone types if specified (and not 'all' which means no specific zone type)
+          if (zoneType && zoneType !== 'all') {
             zoneDescription.types = [zoneType];
             console.log(`[GOTO-PLACE] Added zone type "${zoneType}" to description`);
           }
