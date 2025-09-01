@@ -1,6 +1,7 @@
 module.exports = function (RED) {
   const rmfContextManager = require('../lib/rmfContextManager');
   const rmfEvents = rmfContextManager.rmfEvents;
+  const { validateRobotAndFleet, handleValidationResult } = require('../lib/rmfValidation');
 
   function StartTaskNode(config) {
     RED.nodes.createNode(this, config);
@@ -141,34 +142,17 @@ module.exports = function (RED) {
           }
         }
 
-        // Validate robot exists in RMF data (only if specific robot/fleet specified)
-        if (robotName && robotFleet) {
-          const rmfData = rmfContextManager.getRMFData();
-          if (!rmfData || rmfData.robots.length === 0) {
-            setStatus('red', 'ring', 'No RMF data');
-            msg.payload = { 
-              status: 'failed', 
-              reason: 'RMF context not available. Ensure RMF Config node is deployed and connected.' 
-            };
-            send([null, msg]); // Send to failed output
-            return done();
-          }
-
-          const validatedRobot = rmfData.robots.find(r => {
-            const nameMatch = r.name === robotName || r.robot_name === robotName;
-            const fleetMatch = r.fleet === robotFleet || r.fleet_name === robotFleet;
-            return nameMatch && fleetMatch;
-          });
-
-          if (!validatedRobot) {
-            setStatus('red', 'ring', 'Robot not found');
-            msg.payload = { 
-              status: 'failed', 
-              reason: `Robot "${robotName}" not found in fleet "${robotFleet}"` 
-            };
-            send([null, msg]); // Send to failed output
-            return done();
-          }
+        // Validate robot and fleet using shared utility (only if specific robot/fleet specified)
+        const robotValidation = validateRobotAndFleet({
+          robotName,
+          robotFleet,
+          rmfContextManager,
+          nodeType: 'START-TASK',
+          skipIfEmpty: true // start-task allows empty robot/fleet for auto-assignment
+        });
+        
+        if (!handleValidationResult(robotValidation, setStatus, send, done, msg, [null, msg])) {
+          return;
         }
 
         setStatus('blue', 'dot', 'Creating task');

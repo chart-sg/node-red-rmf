@@ -1,6 +1,7 @@
 module.exports = function (RED) {
   const rmfContextManager = require('../lib/rmfContextManager');
   const rmfEvents = rmfContextManager.rmfEvents;
+  const { validateRobotAndFleet, validateBasicInputs, handleValidationResult } = require('../lib/rmfValidation');
 
   function GoToPlaceNode(config) {
     RED.nodes.createNode(this, config);
@@ -143,15 +144,16 @@ module.exports = function (RED) {
         const taskId = msg.rmf_task_id || (msg.payload && msg.payload.task_id) || msg.task_id;
         const dynamicEventSeq = msg.dynamic_event_seq || (msg.payload && msg.payload.dynamic_event_seq);
 
-        // Validate inputs
-        if (!robotName || !robotFleet || !locationName) {
-          setStatus('red', 'ring', 'Missing input');
-          msg.payload = { 
-            status: 'failed', 
-            reason: 'Robot name, fleet, and location name are required' 
-          };
-          send([null, msg, null]); // Send to failed output
-          return done();
+        // Validate basic inputs using shared utility
+        const basicValidation = validateBasicInputs({
+          robotName,
+          robotFleet, 
+          locationName,
+          nodeType: 'GOTO-PLACE'
+        });
+        
+        if (!handleValidationResult(basicValidation, setStatus, send, done, msg, [null, msg, null])) {
+          return;
         }
 
         // Validate that we have task information (should come from start-task node)
@@ -177,61 +179,17 @@ module.exports = function (RED) {
           return done();
         }
 
-        // Comprehensive validation for resolved input values
-        // 1) Validate robot name is in available robot names
-        console.log(`[GOTO-PLACE] Getting robots from rmfContextManager...`);
-        const allRobots = rmfContextManager.getRobots() || [];
-        const availableRobots = allRobots.map(robot => robot.name);
+        // Validate robot and fleet using shared utility
+        const robotValidation = validateRobotAndFleet({
+          robotName,
+          robotFleet,
+          rmfContextManager,
+          nodeType: 'GOTO-PLACE',
+          skipIfEmpty: false // goto-place requires both robot and fleet
+        });
         
-        console.log(`[GOTO-PLACE] Available robots from rmfContextManager: [${availableRobots.join(', ')}]`);
-        console.log(`[GOTO-PLACE] Validating robot "${robotName}" against available robots`);
-        
-        // If no robots are available, skip robot validation (RMF might still be initializing)
-        if (availableRobots.length === 0) {
-          console.log(`[GOTO-PLACE] No robots available in rmfContextManager, skipping robot validation`);
-        } else if (robotName && !availableRobots.includes(robotName)) {
-          setStatus('red', 'ring', 'Invalid robot name');
-          msg.payload = { 
-            status: 'failed', 
-            reason: `Robot name "${robotName}" not found in available robots: [${availableRobots.join(', ')}]` 
-          };
-          send([null, msg, null]);
-          return done();
-        }
-
-        // 2) Validate robot fleet is in available robot fleets
-        const availableFleets = [...new Set(allRobots.map(robot => robot.fleet))];
-        
-        console.log(`[GOTO-PLACE] Available fleets: [${availableFleets.join(', ')}]`);
-        
-        // If no fleets are available, skip fleet validation (RMF might still be initializing)
-        if (availableFleets.length === 0) {
-          console.log(`[GOTO-PLACE] No fleets available in rmfContextManager, skipping fleet validation`);
-        } else if (robotFleet && !availableFleets.includes(robotFleet)) {
-          setStatus('red', 'ring', 'Invalid robot fleet');
-          msg.payload = { 
-            status: 'failed', 
-            reason: `Robot fleet "${robotFleet}" not found in available fleets: [${availableFleets.join(', ')}]` 
-          };
-          send([null, msg, null]);
-          return done();
-        }
-
-        // 3) Validate robot name belongs to the specified fleet
-        if (robotName && robotFleet && allRobots.length > 0) {
-          const robotsInFleet = allRobots.filter(robot => robot.fleet === robotFleet).map(robot => robot.name);
-          
-          console.log(`[GOTO-PLACE] Robots in fleet "${robotFleet}": [${robotsInFleet.join(', ')}]`);
-          
-          if (!robotsInFleet.includes(robotName)) {
-            setStatus('red', 'ring', 'Robot not in fleet');
-            msg.payload = { 
-              status: 'failed', 
-              reason: `Robot "${robotName}" not found in fleet "${robotFleet}". Available robots in fleet: [${robotsInFleet.join(', ')}]` 
-            };
-            send([null, msg, null]);
-            return done();
-          }
+        if (!handleValidationResult(robotValidation, setStatus, send, done, msg, [null, msg, null])) {
+          return;
         }
 
         // Check if location is a regular waypoint

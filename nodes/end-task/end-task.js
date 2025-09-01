@@ -1,6 +1,7 @@
 module.exports = function (RED) {
   const rmfContextManager = require('../lib/rmfContextManager');
   const rmfEvents = rmfContextManager.rmfEvents;
+  const { validateRobotAndFleet, validateBasicInputs, handleValidationResult } = require('../lib/rmfValidation');
 
   function EndTaskNode(config) {
     RED.nodes.createNode(this, config);
@@ -105,43 +106,28 @@ module.exports = function (RED) {
         const robotFleet = msg.rmf_robot_fleet || msg._rmf_robot_fleet || (msg.payload && msg.payload.robot_fleet) || msg.robot_fleet || node.robot_fleet;
         const taskId = msg.rmf_task_id || msg._rmf_task_id || (msg.payload && msg.payload.task_id) || msg.task_id;
 
-        // Validate inputs
-        if (!robotName || !robotFleet) {
-          setStatus('red', 'ring', 'Missing robot info');
-          msg.payload = { 
-            status: 'failed', 
-            reason: 'Robot name and fleet are required' 
-          };
-          send(msg);
-          return done();
-        }
-
-        // Validate robot exists in RMF data
-        const rmfData = rmfContextManager.getRMFData();
-        if (!rmfData || rmfData.robots.length === 0) {
-          setStatus('red', 'ring', 'No RMF data');
-          msg.payload = { 
-            status: 'failed', 
-            reason: 'RMF context not available. Ensure RMF Config node is deployed and connected.' 
-          };
-          send(msg);
-          return done();
-        }
-
-        const validatedRobot = rmfData.robots.find(r => {
-          const nameMatch = r.name === robotName || r.robot_name === robotName;
-          const fleetMatch = r.fleet === robotFleet || r.fleet_name === robotFleet;
-          return nameMatch && fleetMatch;
+        // Validate basic inputs using shared utility
+        const basicValidation = validateBasicInputs({
+          robotName,
+          robotFleet,
+          nodeType: 'END-TASK'
         });
+        
+        if (!handleValidationResult(basicValidation, setStatus, send, done, msg)) {
+          return;
+        }
 
-        if (!validatedRobot) {
-          setStatus('red', 'ring', 'Robot not found');
-          msg.payload = { 
-            status: 'failed', 
-            reason: `Robot "${robotName}" not found in fleet "${robotFleet}"` 
-          };
-          send(msg);
-          return done();
+        // Validate robot and fleet using shared utility
+        const robotValidation = validateRobotAndFleet({
+          robotName,
+          robotFleet,
+          rmfContextManager,
+          nodeType: 'END-TASK',
+          skipIfEmpty: false // end-task requires both robot and fleet
+        });
+        
+        if (!handleValidationResult(robotValidation, setStatus, send, done, msg)) {
+          return;
         }
 
         setStatus('blue', 'dot', 'Ending task');

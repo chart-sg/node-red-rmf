@@ -42,48 +42,50 @@
           button.prop('disabled', true);
           
           // Reload data
-          loadRMFData();
-          
-          // Reset button after delay
-          setTimeout(() => {
+          loadRMFData().then(() => {
+            // Restore button
             button.html(originalText);
             button.prop('disabled', false);
-          }, 1000);
+          }).catch(() => {
+            button.html(originalText);
+            button.prop('disabled', false);
+          });
         });
       }
       
-      function loadRMFData() {
-        // Fetch RMF data from the global context
-        $.getJSON('/rmf/data', function(data) {
-          node.rmfData = data;
+      async function loadRMFData() {
+        try {
+          // Clear any existing status messages
+          $('.rmf-data-status').remove();
           
-          if (data.status === 'not_initialized') {
-            console.warn('RMF context not initialized - dropdowns will be empty');
-            showDataStatus('RMF not initialized. Deploy RMF Config node first.', 'warning');
-          } else if (data.status === 'error') {
-            console.error('Error loading RMF data:', data.message);
-            showDataStatus('Error loading RMF data: ' + data.message, 'error');
-          } else if (data.robots.length === 0) {
-            console.warn('No RMF robots available - dropdowns will be empty');
-            showDataStatus('No RMF robots available. Check RMF system status.', 'warning');
+          const response = await $.get('/rmf/data');
+          
+          if (response && response.robots) {
+            node.rmfData.robots = response.robots;
+            node.rmfData.fleets = [...new Set(response.robots.map(r => r.fleet))];
+            
+            populateDropdowns();
+            showStatus('success', `Loaded ${response.robots.length} robots`);
           } else {
-            showDataStatus(`Loaded ${data.robots.length} robots from ${data.fleets.length} fleets`, 'success');
+            node.rmfData.robots = [];
+            node.rmfData.fleets = [];
+            populateDropdowns();
+            showStatus('warning', 'No robot data available');
           }
           
-          populateDropdowns();
-        }).fail(function(xhr, status, error) {
+        } catch (error) {
           console.error('Failed to load RMF data:', error);
-          showDataStatus('Failed to connect to RMF data source', 'error');
-          node.rmfData = { robots: [], fleets: [] };
+          node.rmfData.robots = [];
+          node.rmfData.fleets = [];
           populateDropdowns();
-        });
+          showStatus('error', 'Failed to load RMF data');
+        }
       }
       
-      function showDataStatus(message, type) {
-        // Remove any existing status message
+      function showStatus(type, message) {
+        // Remove existing status
         $('.rmf-data-status').remove();
         
-        // Add status message
         let statusClass = 'form-tips';
         let icon = 'fa-info-circle';
         let color = '#666';
@@ -200,11 +202,6 @@
           }
         });
       }
-    },
-    oneditsave: function() {
-      // No validation needed - robot info can come from message properties
-      // The node will validate at runtime and provide appropriate error messages
-      return true;
     }
   });
 </script>
@@ -223,102 +220,92 @@
   </div>
   
   <div class="form-row">
-    <label for="node-input-robot_name">Robot Name <span style="color: red;">*</span></label>
+    <label for="node-input-robot_name">Robot Name</label>
     <select id="node-input-robot_name" style="width: 100%;">
       <option value="">Use msg.rmf_robot_name</option>
     </select>
   </div>
   
   <div class="form-row">
-    <label for="node-input-robot_fleet">Robot Fleet <span style="color: red;">*</span></label>
+    <label for="node-input-robot_fleet">Robot Fleet</label>
     <select id="node-input-robot_fleet" style="width: 100%;">
       <option value="">Use msg.rmf_robot_fleet</option>
     </select>
   </div>
   
   <div class="form-tips">
+    <b>Purpose:</b><br/>
+    Cancels active RMF tasks for robots. This node can be used to immediately stop and cancel any ongoing dynamic event sequence for a robot.<br/><br/>
+    
     <b>Setup Requirements:</b><br/>
     • Deploy and connect an RMF Config node first<br/>
-    • Wait for RMF system to initialize and load data<br/>
     • Use "Refresh Data" button if dropdowns are empty<br/><br/>
     
-    <b>Usage Tips:</b><br/>
-    • Both Robot name and fleet are required<br/>
-    • Robot name and fleet are constrained to each other<br/>
-    • If unique robot name is provided, fleet will be auto-selected<br/>
-    • Use "Use msg.rmf_xxx" dropdown options to pass values via message properties<br/>
-    • The node will cancel the currently active dynamic event for the specified robot<br/>
-    • Robot must have an active dynamic event with valid dynamic_event_id
+    <b>Usage:</b><br/>
+    • Robot name and fleet can come from previous nodes via RMF metadata<br/>
+    • Use "Use msg.xxx" dropdown options to pass values via message properties<br/>
+    • Can be used independently or as part of error handling workflows<br/>
+    • Will cancel the currently active dynamic event for the specified robot
   </div>
 </script>
 
 <script type="text/html" data-help-name="cancel-task">
-  <p>Cancel an active dynamic event task for a specified robot using RMF. Requires an RMF Config node.</p>
+  <p>Cancels active RMF tasks for robots. This node sends a cancel command to immediately stop any ongoing dynamic event sequence for a robot.</p>
   
   <h3>Configuration</h3>
   <dl class="message-properties">
     <dt>Robot Name <span class="property-type">string</span></dt>
-    <dd>The name of the robot whose task should be canceled (required). Select from dropdown or use "Use msg.rmf_robot_name" to pass via message.</dd>
+    <dd>The name of the robot (optional). Select from dropdown or use "Use msg.robot_name" to pass via message. Usually passed from previous nodes via RMF metadata.</dd>
     
     <dt>Robot Fleet <span class="property-type">string</span></dt>
-    <dd>The fleet the robot belongs to (required). Auto-selected when robot is chosen. Select from dropdown or use "Use msg.rmf_robot_fleet" to pass via message.</dd>
+    <dd>The fleet the robot belongs to (optional). Auto-selected when robot is chosen. Usually passed from previous nodes via RMF metadata.</dd>
   </dl>
   
   <h3>Inputs</h3>
   <dl class="message-properties">
-    <dt>msg.rmf_robot_name <span class="property-type">string</span></dt>
-    <dd>Robot name (used when "Use msg.rmf_robot_name" is selected)</dd>
+    <dt>msg._rmf_task_id <span class="property-type">string</span></dt>
+    <dd>RMF task ID metadata (preferred - automatically set by start-task node)</dd>
     
-    <dt>msg.rmf_robot_fleet <span class="property-type">string</span></dt>
-    <dd>Robot fleet (used when "Use msg.rmf_robot_fleet" is selected)</dd>
+    <dt>msg._rmf_robot_name <span class="property-type">string</span></dt>
+    <dd>Robot name metadata (preferred - automatically set by start-task node)</dd>
+    
+    <dt>msg._rmf_robot_fleet <span class="property-type">string</span></dt>
+    <dd>Robot fleet metadata (preferred - automatically set by start-task node)</dd>
+    
+    <dt>msg.robot_name <span class="property-type">string</span></dt>
+    <dd>Robot name (fallback when "Use msg.robot_name" is selected)</dd>
+    
+    <dt>msg.robot_fleet <span class="property-type">string</span></dt>
+    <dd>Robot fleet (fallback when "Use msg.robot_fleet" is selected)</dd>
   </dl>
   
   <h3>Outputs</h3>
   <dl class="message-properties">
-    <dt>msg.payload <span class="property-type">object</span></dt>
-    <dd>Contains the result of the cancel operation, including robot information and status</dd>
+    <dt>payload.status <span class="property-type">string</span></dt>
+    <dd>"cancelled" when task is successfully cancelled, "failed" on failure, "error" on exception</dd>
     
-    <dt>msg.payload.status <span class="property-type">string</span></dt>
-    <dd>Status of the operation: "success", "error", "warning", or "exception"</dd>
+    <dt>payload.action <span class="property-type">string</span></dt>
+    <dd>"cancel" - indicates this was a cancel task operation</dd>
     
-    <dt>msg.payload.robot_name <span class="property-type">string</span></dt>
-    <dd>Name of the robot whose task was canceled</dd>
+    <dt>payload.robot_name <span class="property-type">string</span></dt>
+    <dd>The robot name</dd>
     
-    <dt>msg.payload.robot_fleet <span class="property-type">string</span></dt>
-    <dd>Fleet of the robot whose task was canceled</dd>
+    <dt>payload.robot_fleet <span class="property-type">string</span></dt>
+    <dd>The robot fleet</dd>
     
-    <dt>msg.payload.dynamic_event_seq <span class="property-type">number</span></dt>
-    <dd>Dynamic event sequence number that was canceled (if successful)</dd>
+    <dt>payload.task_id <span class="property-type">string</span></dt>
+    <dd>The RMF task ID that was cancelled (if available)</dd>
     
-    <dt>msg.payload.dynamic_event_id <span class="property-type">BigInt</span></dt>
-    <dd>Dynamic event ID that was canceled (if successful)</dd>
+    <dt>payload.timestamp <span class="property-type">string</span></dt>
+    <dd>Timestamp when the cancellation was sent</dd>
   </dl>
   
   <h3>Details</h3>
-  <p>This node cancels an active dynamic event task for a specified robot using RMF's dynamic event action server. The node automatically retrieves the necessary information (dynamic_event_seq and dynamic_event_id) from the robot's context.</p>
+  <p>This node sends a "cancel" dynamic event to RMF to immediately stop the currently active dynamic event sequence for the specified robot.</p>
   
-  <p><strong>Prerequisites:</strong></p>
-  <ul>
-    <li>The robot must have an active dynamic event task</li>
-    <li>The robot context must contain valid dynamic_event_seq and dynamic_event_id</li>
-    <li>RMF system must be connected and operational</li>
-  </ul>
+  <p><strong>Usage Scenarios:</strong> Emergency stops, error handling workflows, user-initiated cancellations, or timeout-based task cancellations.</p>
   
-  <p><strong>Robot and Fleet Constraint:</strong> Robot names are tied to specific fleets. When you select a robot, its fleet is automatically selected. When you select a fleet, only robots from that fleet are shown.</p>
+  <p><strong>Behavior:</strong> The cancel command will stop any ongoing dynamic event (goto-place, delivery tasks, etc.) for the robot. The robot will remain at its current location and await new instructions.</p>
   
-  <p><strong>Error Handling:</strong> The node provides detailed error messages if:</p>
-  <ul>
-    <li>Robot is not found in RMF data</li>
-    <li>Robot has no active dynamic event</li>
-    <li>Robot context is missing required information</li>
-    <li>Cancel operation fails for any reason</li>
-  </ul>
-  
-  <p><strong>Output Status:</strong></p>
-  <ul>
-    <li><strong>success:</strong> Cancel operation completed successfully</li>
-    <li><strong>warning:</strong> Robot has no active task to cancel</li>
-    <li><strong>error:</strong> Operation failed due to validation or RMF errors</li>
-    <li><strong>exception:</strong> Unexpected error during cancel operation</li>
-  </ul>
+  <p><strong>RMF Metadata:</strong> This node prefers to use RMF metadata (msg._rmf_*) passed through the workflow chain for robot identification, but can also work with direct message properties for standalone usage.</p>
 </script>
