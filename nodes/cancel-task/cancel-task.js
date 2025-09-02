@@ -38,12 +38,12 @@ module.exports = function (RED) {
       }
     }
 
-    // Listen for RMF context events
+    // Listen for RMF context events - but only after config is ready
     function onReady() {
-      updateRMFStatus();
+      if (rmfConfigReady) updateRMFStatus();
     }
     function onSocketConnected() {
-      updateRMFStatus();
+      if (rmfConfigReady) updateRMFStatus();
     }
     function onSocketDisconnected() {
       setStatus('red', 'ring', 'RMF disconnected');
@@ -62,7 +62,19 @@ module.exports = function (RED) {
     rmfEvents.on('error', onError);
 
     // Initial status
-    updateRMFStatus();
+    setStatus('yellow', 'ring', 'Waiting for RMF config...');
+
+    // Wait for RMF config to be ready
+    let rmfConfigReady = false;
+    if (node.configNode) {
+      node.configNode.on('rmf-ready', (readyInfo) => {
+        console.log('[CANCEL-TASK] RMF config ready, checking connection...');
+        rmfConfigReady = true;
+        setStatus('yellow', 'ring', 'Connecting to RMF...');
+        // Small delay to allow RMF context to fully initialize
+        setTimeout(updateRMFStatus, 1000);
+      });
+    }
 
     // Clear listeners on close
     node.on('close', async (removed, done) => {

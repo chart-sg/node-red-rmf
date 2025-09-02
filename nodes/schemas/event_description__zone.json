@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/open-rmf/rmf_ros2/main/rmf_fleet_adapter/schemas/event_description__zone.json",
+  "title": "Zone Event",
+  "description": "Go to a zone",
+  "type": "object",
+  "properties": {
+    "zone": { "type": "string" },
+    "types":
+    {
+      "description": "A list of zone entry types",
+      "type": "array",
+      "items":{"type": "string"}
+     },
+    "places": {
+      "description": "A list of preferred parking spots",
+      "type": "array",
+      "items": { "$ref": "place.json" }
+    },
+    "facing": {
+      "description": "Final goal facing orientation in radian",
+      "type": "number"
+    }
+  },
+  "required": ["zone"]
+}

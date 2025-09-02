@@ -44,6 +44,8 @@
       "rmf-config": "nodes/rmf-config/rmf-config.js",
       "start-task": "nodes/start-task/start-task.js",
       "goto-place": "nodes/goto-place/goto-place.js",
+      "perform-action": "nodes/perform-action/perform-action.js",
+      "teleop": "nodes/teleop/teleop.js",
       "cancel-task": "nodes/cancel-task/cancel-task.js",
       "end-task": "nodes/end-task/end-task.js"
     }

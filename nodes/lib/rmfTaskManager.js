@@ -207,6 +207,10 @@ async function createRMFTask(taskData, configNode) {
       }
     }
     
+    // Debug logging for the payload
+    console.log(`RMF: Creating task with endpoint: ${endpoint}`);
+    console.log(`RMF: Task payload:`, JSON.stringify(taskPayload, null, 2));
+    
     const response = await axios.post(`http://${host}:${port}${endpoint}`, taskPayload, {
       headers: {
         'Authorization': `Bearer ${jwt}`,
