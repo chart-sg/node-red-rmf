@@ -1,0 +1,813 @@
+<script type="text/javascript">
+  // Event management utilities
+  const TaskV2EventUtils = {
+    currentNode: null, // Store reference to current node
+    
+    setCurrentNode: function(node) {
+      this.currentNode = node;
+    },
+    
+    addEvent: function(container, eventData = {}) {
+      const eventId = Date.now() + Math.random();
+      const eventDiv = $(`
+        <div class="event-item" data-event-id="${eventId}" style="border: 1px solid #ddd; padding: 10px; margin: 5px 0; background: #f9f9f9;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <label style="font-weight: bold;">Event ${container.children().length + 1}</label>
+            <button type="button" class="remove-event red-ui-button" style="background: #d32f2f;">
+              <i class="fa fa-trash"></i> Remove
+            </button>
+          </div>
+          
+          <div class="form-row">
+            <label>Event Type:</label>
+            <select class="event-category" style="width: 100%;">
+              <option value="go_to_place">Go To Place</option>
+              <option value="go_to_zone">Go To Zone</option>
+              <option value="perform_action">Perform Action</option>
+            </select>
+          </div>
+          
+          <div class="event-details">
+            <!-- Event-specific fields will be inserted here -->
+          </div>
+        </div>
+      `);
+      
+      container.append(eventDiv);
+      
+      // Set up event handlers
+      eventDiv.find('.remove-event').on('click', function() {
+        eventDiv.remove();
+        TaskV2EventUtils.updateEventLabels(container);
+      });
+      
+      eventDiv.find('.event-category').on('change', function() {
+        TaskV2EventUtils.updateEventDetails(eventDiv, $(this).val());
+      }).val(eventData.category || 'go_to_place');
+      
+      // Initialize event details
+      TaskV2EventUtils.updateEventDetails(eventDiv, eventData.category || 'go_to_place', eventData);
+      
+      // If we have eventData, restore values after dropdown population
+      if (eventData && Object.keys(eventData).length > 1) {
+        setTimeout(() => {
+          TaskV2EventUtils.restoreEventValues(eventDiv.parent(), [eventData]);
+        }, 50);
+      }
+      
+      return eventDiv;
+    },
+    
+    updateEventLabels: function(container) {
+      container.find('.event-item').each(function(index) {
+        $(this).find('label').first().text(`Event ${index + 1}`);
+      });
+    },
+    
+    updateEventDetails: function(eventDiv, category, eventData = {}) {
+      const detailsDiv = eventDiv.find('.event-details');
+      detailsDiv.empty();
+      
+      if (category === 'go_to_place') {
+        detailsDiv.html(`
+          <div class="form-row">
+            <label>Waypoint:</label>
+            <select class="event-location" style="width: 100%;">
+              <option value="">Select waypoint...</option>
+            </select>
+          </div>
+        `);
+        
+        // Populate waypoints from RMF navGraphs data (waypoints only, no zones)
+        const node = TaskV2EventUtils.currentNode;
+        if (node && node.rmfData && node.rmfData.navGraphs) {
+          console.log('Populating waypoints, navGraphs:', node.rmfData.navGraphs.length);
+          const locationSelect = detailsDiv.find('.event-location');
+          const waypoints = new Map(); // Use Map to avoid duplicates
+          
+          // Extract waypoints from nav graphs
+          node.rmfData.navGraphs.forEach(navGraph => {
+            if (navGraph.vertices) {
+              navGraph.vertices.forEach(vertex => {
+                if (vertex.name && vertex.name.trim() !== '') {
+                  // Check if this vertex is part of a zone (exclude zone vertices)
+                  const isPartOfZone = node.rmfData.zones && node.rmfData.zones.some(zone => {
+                    const zoneVertices = getZoneVertices(zone);
+                    if (zoneVertices.length === 0) return false;
+                    return zoneVertices.some(zv => {
+                      if (zv.name && zv.name === vertex.name) return true;
+                      if (typeof zv === 'number' && vertex.index === zv) return true;
+                      if (zv.x !== undefined && zv.y !== undefined && 
+                          Math.abs(zv.x - vertex.x) < 0.01 && Math.abs(zv.y - vertex.y) < 0.01) {
+                        return true;
+                      }
+                      return false;
+                    });
+                  });
+                  
+                  // Only add if it's not part of a zone
+                  if (!isPartOfZone) {
+                    waypoints.set(vertex.name, {
+                      name: vertex.name,
+                      fleet: navGraph.fleet || navGraph.name
+                    });
+                  }
+                }
+              });
+            }
+          });
+          
+          console.log('Found waypoints:', waypoints.size);
+          
+          // Populate dropdown with sorted waypoints
+          Array.from(waypoints.values()).sort((a, b) => a.name.localeCompare(b.name)).forEach(waypoint => {
+            locationSelect.append(`<option value="${waypoint.name}">${waypoint.name}</option>`);
+          });
+          
+          // Set saved value if provided
+          if (eventData.description) {
+            locationSelect.val(eventData.description);
+            console.log('Set waypoint value to:', eventData.description, 'Found in dropdown:', locationSelect.find(`option[value="${eventData.description}"]`).length > 0);
+          }
+        } else {
+          console.log('No RMF data available for waypoints. Node:', !!node, 'rmfData:', node ? !!node.rmfData : 'no node', 'navGraphs:', node && node.rmfData ? node.rmfData.navGraphs?.length : 'no rmfData');
+        }
+        
+      } else if (category === 'go_to_zone') {
+        detailsDiv.html(`
+          <div class="form-row">
+            <label>Zone:</label>
+            <select class="event-zone" style="width: 100%;">
+              <option value="">Select zone...</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label>Zone Types (optional):</label>
+            <input type="text" class="event-zone-types" placeholder="e.g. patient_facing, left, right (default: all)" style="width: 100%;">
+            <div class="form-tips">Comma-separated list of zone entry types</div>
+          </div>
+          <div class="form-row">
+            <label>Preferred Places (optional):</label>
+            <select class="event-zone-places" multiple style="width: 100%; height: 80px;">
+            </select>
+            <div class="form-tips">Hold Ctrl/Cmd to select multiple preferred parking spots within the zone</div>
+          </div>
+          <div class="form-row">
+            <label>Final Facing (radians, optional):</label>
+            <input type="number" class="event-zone-facing" step="0.1" placeholder="e.g., 1.57 (90 degrees)" style="width: 100%;">
+          </div>
+        `);
+        
+        // Populate zones from RMF data
+        const node = TaskV2EventUtils.currentNode;
+        if (node && node.rmfData && node.rmfData.zones) {
+          console.log('Populating zones, zones:', node.rmfData.zones.length);
+          const zoneSelect = detailsDiv.find('.event-zone');
+          const placesSelect = detailsDiv.find('.event-zone-places');
+          
+          // Populate zones
+          node.rmfData.zones.forEach(zone => {
+            if (zone.name && zone.name.trim() !== '') {
+              zoneSelect.append(`<option value="${zone.name}">${zone.name}</option>`);
+            }
+          });
+          
+          // Update places when zone changes
+          zoneSelect.on('change', function() {
+            const selectedZone = $(this).val();
+            placesSelect.empty();
+            
+            if (selectedZone) {
+              const zone = node.rmfData.zones.find(z => z.name === selectedZone);
+              if (zone && zone.vertices) {
+                const zoneVertices = getZoneVertices(zone);
+                zoneVertices.forEach(vertex => {
+                  if (vertex.name && vertex.name.trim() !== '') {
+                    placesSelect.append(`<option value="${vertex.name}">${vertex.name}</option>`);
+                  }
+                });
+              }
+            }
+          });
+          
+          // Set values from eventData
+          if (eventData.zone) {
+            zoneSelect.val(eventData.zone);
+            zoneSelect.trigger('change'); // Populate places
+            console.log('Set zone value to:', eventData.zone, 'Found in dropdown:', zoneSelect.find(`option[value="${eventData.zone}"]`).length > 0);
+          }
+          if (eventData.types && Array.isArray(eventData.types)) {
+            detailsDiv.find('.event-zone-types').val(eventData.types.join(','));
+          }
+          if (eventData.places && Array.isArray(eventData.places)) {
+            setTimeout(() => {
+              const placeNames = eventData.places.map(p => typeof p === 'string' ? p : p.name);
+              placesSelect.val(placeNames);
+              console.log('Set zone places to:', placeNames);
+            }, 100);
+          }
+          if (eventData.facing !== undefined) {
+            detailsDiv.find('.event-zone-facing').val(eventData.facing);
+          }
+        } else {
+          console.log('No RMF data available for zones. Node:', !!node, 'rmfData:', node ? !!node.rmfData : 'no node', 'zones:', node && node.rmfData ? node.rmfData.zones?.length : 'no rmfData');
+        }
+        
+      } else if (category === 'perform_action') {
+        detailsDiv.html(`
+          <div class="form-row">
+            <label>Action Category:</label>
+            <input type="text" class="event-action-category" value="${eventData.action_category || 'teleop'}" style="width: 100%;">
+          </div>
+          <div class="form-row">
+            <label>Action Description:</label>
+            <textarea class="event-action-description" style="width: 100%; height: 60px;">${eventData.action_description || ''}</textarea>
+          </div>
+          <div class="form-row">
+            <label>Duration Estimate (ms):</label>
+            <input type="number" class="event-duration-estimate" value="${eventData.duration_estimate || 30000}" style="width: 100%;">
+          </div>
+        `);
+      }
+    },
+    
+    getEventsData: function(container) {
+      const events = [];
+      container.find('.event-item').each(function() {
+        const eventDiv = $(this);
+        const category = eventDiv.find('.event-category').val();
+        const eventData = { category };
+        
+        if (category === 'go_to_place') {
+          eventData.description = eventDiv.find('.event-location').val();
+        } else if (category === 'go_to_zone') {
+          eventData.zone = eventDiv.find('.event-zone').val();
+          
+          // Parse zone types
+          const typesString = eventDiv.find('.event-zone-types').val();
+          if (typesString && typesString.trim()) {
+            eventData.types = typesString.split(',').map(t => t.trim()).filter(t => t);
+          }
+          
+          // Get selected places
+          const selectedPlaces = eventDiv.find('.event-zone-places').val();
+          if (selectedPlaces && selectedPlaces.length > 0) {
+            eventData.places = selectedPlaces.map(place => ({ name: place }));
+          }
+          
+          // Get facing direction
+          const facing = eventDiv.find('.event-zone-facing').val();
+          if (facing && facing.trim()) {
+            eventData.facing = parseFloat(facing);
+          }
+        } else if (category === 'perform_action') {
+          eventData.action_category = eventDiv.find('.event-action-category').val();
+          eventData.action_description = eventDiv.find('.event-action-description').val();
+          eventData.duration_estimate = parseInt(eventDiv.find('.event-duration-estimate').val()) || 30000;
+        }
+        
+        events.push(eventData);
+      });
+      return events;
+    },
+    
+    setEventsData: function(container, events) {
+      console.log('setEventsData called with events:', events);
+      container.empty();
+      if (events && events.length > 0) {
+        events.forEach(eventData => {
+          console.log('Adding event:', eventData);
+          TaskV2EventUtils.addEvent(container, eventData);
+        });
+        
+        // Delay to ensure dropdowns are populated before setting values
+        setTimeout(() => {
+          console.log('Restoring event values after delay');
+          TaskV2EventUtils.restoreEventValues(container, events);
+        }, 100);
+      } else {
+        // Add default go_to_place event
+        TaskV2EventUtils.addEvent(container, { category: 'go_to_place' });
+      }
+    },
+    
+    restoreEventValues: function(container, events) {
+      // Restore saved values to event dropdowns after they're populated
+      console.log('restoreEventValues called with events:', events);
+      container.find('.event-item').each(function(index) {
+        const eventDiv = $(this);
+        const eventData = events[index];
+        console.log(`Restoring event ${index}:`, eventData);
+        
+        if (eventData && eventData.category) {
+          // Set category first
+          eventDiv.find('.event-category').val(eventData.category);
+          
+          // Then restore specific values based on category
+          if (eventData.category === 'go_to_place' && eventData.description) {
+            const locationSelect = eventDiv.find('.event-location');
+            locationSelect.val(eventData.description);
+            console.log(`Set location to ${eventData.description}, result:`, locationSelect.val());
+          } else if (eventData.category === 'go_to_zone') {
+            if (eventData.zone) {
+              const zoneSelect = eventDiv.find('.event-zone');
+              zoneSelect.val(eventData.zone);
+              zoneSelect.trigger('change'); // Populate places
+              console.log(`Set zone to ${eventData.zone}, result:`, zoneSelect.val());
+            }
+            if (eventData.types && Array.isArray(eventData.types)) {
+              eventDiv.find('.event-zone-types').val(eventData.types.join(','));
+            }
+            if (eventData.places && Array.isArray(eventData.places)) {
+              setTimeout(() => {
+                const placeNames = eventData.places.map(p => typeof p === 'string' ? p : p.name);
+                eventDiv.find('.event-zone-places').val(placeNames);
+                console.log(`Set zone places to:`, placeNames);
+              }, 100);
+            }
+            if (eventData.facing !== undefined) {
+              eventDiv.find('.event-zone-facing').val(eventData.facing);
+            }
+          } else if (eventData.category === 'perform_action') {
+            if (eventData.action_category) {
+              eventDiv.find('.event-action-category').val(eventData.action_category);
+            }
+            if (eventData.action_description) {
+              eventDiv.find('.event-action-description').val(eventData.action_description);
+            }
+            if (eventData.duration_estimate) {
+              eventDiv.find('.event-duration-estimate').val(eventData.duration_estimate);
+            }
+          }
+        }
+      });
+    },
+    
+    refreshAllEventDropdowns: function(container) {
+      // Refresh dropdowns for all existing events when RMF data is updated
+      const currentEvents = []; // Store current event data
+      
+      container.find('.event-item').each(function() {
+        const eventDiv = $(this);
+        const category = eventDiv.find('.event-category').val();
+        const currentData = { category };
+        
+        // Preserve current values
+        if (category === 'go_to_place') {
+          currentData.description = eventDiv.find('.event-location').val();
+        } else if (category === 'go_to_zone') {
+          currentData.zone = eventDiv.find('.event-zone').val();
+          const typesString = eventDiv.find('.event-zone-types').val();
+          if (typesString && typesString.trim()) {
+            currentData.types = typesString.split(',').map(t => t.trim()).filter(t => t);
+          }
+          const selectedPlaces = eventDiv.find('.event-zone-places').val();
+          if (selectedPlaces && selectedPlaces.length > 0) {
+            currentData.places = selectedPlaces.map(place => ({ name: place }));
+          }
+          const facing = eventDiv.find('.event-zone-facing').val();
+          if (facing && facing.trim()) {
+            currentData.facing = parseFloat(facing);
+          }
+        } else if (category === 'perform_action') {
+          currentData.action_category = eventDiv.find('.event-action-category').val();
+          currentData.action_description = eventDiv.find('.event-action-description').val();
+          currentData.duration_estimate = parseInt(eventDiv.find('.event-duration-estimate').val()) || 30000;
+        }
+        
+        currentEvents.push(currentData);
+        
+        // Refresh the event details (this repopulates dropdowns)
+        TaskV2EventUtils.updateEventDetails(eventDiv, category, {});
+      });
+      
+      // Restore the values after dropdowns are refreshed
+      setTimeout(() => {
+        TaskV2EventUtils.restoreEventValues(container, currentEvents);
+      }, 100);
+    }
+  };
+
+  // RMF Form Utilities specific to TaskV2
+  const TaskV2RMFUtils = {
+    populateRobotDropdown: function(options = {}) {
+      const { node, selectId = 'node-input-robot_name', placeholder = 'Use msg.rmf_robot_name', valueProperty = 'robot_name' } = options;
+      const select = $(`#${selectId}`);
+      const currentValue = node.isLoaded ? select.val() : node[valueProperty];
+      
+      select.empty().append(`<option value="">${placeholder}</option>`);
+      
+      if (node.rmfData && node.rmfData.robots && node.rmfData.robots.length > 0) {
+        node.rmfData.robots.forEach(robot => {
+          select.append(`<option value="${robot.name}" data-fleet="${robot.fleet}">${robot.name} (${robot.fleet})</option>`);
+        });
+      }
+      
+      select.val(currentValue || '');
+    },
+
+    populateFleetDropdown: function(options = {}) {
+      const { node, selectId = 'node-input-robot_fleet', placeholder = 'Use msg.rmf_robot_fleet', valueProperty = 'robot_fleet' } = options;
+      const select = $(`#${selectId}`);
+      const currentValue = node.isLoaded ? select.val() : node[valueProperty];
+      
+      select.empty().append(`<option value="">${placeholder}</option>`);
+      
+      if (node.rmfData && node.rmfData.fleets && node.rmfData.fleets.length > 0) {
+        node.rmfData.fleets.forEach(fleet => {
+          select.append(`<option value="${fleet}">${fleet}</option>`);
+        });
+      }
+      
+      select.val(currentValue || '');
+    },
+
+    setupRobotFleetHandlers: function(options = {}) {
+      const { node, robotSelectId = 'node-input-robot_name', fleetSelectId = 'node-input-robot_fleet' } = options;
+      const robotSelect = $(`#${robotSelectId}`);
+      const fleetSelect = $(`#${fleetSelectId}`);
+
+      robotSelect.off('change').on('change', function() {
+        const selectedRobot = $(this).val();
+        const selectedOption = $(this).find('option:selected');
+        const robotFleet = selectedOption.data('fleet');
+        
+        if (selectedRobot && selectedRobot !== '' && robotFleet) {
+          fleetSelect.val(robotFleet);
+        } else {
+          fleetSelect.val('');
+        }
+      });
+
+      fleetSelect.off('change').on('change', function() {
+        const selectedFleet = $(this).val();
+        const currentRobot = robotSelect.val();
+        
+        if (currentRobot && selectedFleet && node.rmfData && node.rmfData.robots) {
+          const robot = node.rmfData.robots.find(r => r.name === currentRobot);
+          if (robot && robot.fleet !== selectedFleet) {
+            robotSelect.val('');
+          }
+        }
+        
+        if (selectedFleet && selectedFleet !== '') {
+          robotSelect.empty().append('<option value="">Use msg.rmf_robot_name</option>');
+          if (node.rmfData && node.rmfData.robots) {
+            node.rmfData.robots.forEach(robot => {
+              if (robot.fleet === selectedFleet) {
+                robotSelect.append(`<option value="${robot.name}" data-fleet="${robot.fleet}">${robot.name} (${robot.fleet})</option>`);
+              }
+            });
+          }
+          const robotFromFleet = node.rmfData.robots ? node.rmfData.robots.find(r => r.name === currentRobot && r.fleet === selectedFleet) : null;
+          if (robotFromFleet) {
+            robotSelect.val(currentRobot);
+          }
+        } else {
+          robotSelect.empty().append('<option value="">Use msg.rmf_robot_name</option>');
+          if (node.rmfData && node.rmfData.robots) {
+            node.rmfData.robots.forEach(robot => {
+              robotSelect.append(`<option value="${robot.name}" data-fleet="${robot.fleet}">${robot.name} (${robot.fleet})</option>`);
+            });
+          }
+          robotSelect.val(currentRobot);
+        }
+      });
+    },
+
+    showDataStatus: function(message, type = 'info', configSelectId = 'node-input-config') {
+      $('.rmf-data-status').remove();
+      let color = '#2196f3', icon = 'fa-info-circle';
+      if (type === 'error') { color = '#f44336'; icon = 'fa-exclamation-triangle'; }
+      else if (type === 'success') { color = '#4caf50'; icon = 'fa-check-circle'; }
+      const statusDiv = $(`<div class="rmf-data-status form-tips" style="color: ${color}; margin-top: 10px;"><i class="fa ${icon}" style="margin-right: 5px;"></i>${message}</div>`);
+      $(`#${configSelectId}`).closest('.form-row').after(statusDiv);
+    }
+  };
+
+  // Helper functions
+  function getZoneVertices(zone) {
+    return zone.vertices || zone.zone_vertices || [];
+  }
+  
+  function getVertexLevel(vertex) {
+    if (vertex.params && vertex.params.length > 0) {
+      const mapNameParam = vertex.params.find(p => p.name === 'map_name');
+      if (mapNameParam && mapNameParam.value_string) {
+        return mapNameParam.value_string;
+      }
+    }
+    return 'L1'; // Default level
+  }
+
+  RED.nodes.registerType('start-taskV2', {
+    category: 'RMF Task V2',
+    color: '#8bc34a',
+    defaults: {
+      name: { value: '' },
+      config: { type: 'rmf-config', required: true },
+      robot_name: { value: '' },
+      robot_fleet: { value: '' },
+      task_category: { value: '' },
+      task_detail: { value: '' },
+      events: { value: [] }
+    },
+    inputs: 1,
+    outputs: 3,
+    outputLabels: ["success", "failed", "status"],
+    icon: 'font-awesome/fa-play-circle',
+    label: function () {
+      return this.name || 'start-taskV2';
+    },
+    oneditprepare: function() {
+      const node = this;
+      
+      // Set the current node reference for event utilities
+      TaskV2EventUtils.setCurrentNode(node);
+      
+      console.log('Node oneditprepare - saved events:', node.events);
+      
+      // Initialize data storage (same structure as goto-place)
+      node.rmfData = {
+        robots: [],
+        fleets: [],
+        navGraphs: [],
+        zones: []
+      };
+      
+      // Load RMF data
+      loadRMFData();
+      
+      // Setup change handlers
+      setupChangeHandlers();
+      
+      // Setup refresh button
+      setupRefreshButton();
+      
+      // Setup events management
+      setupEventsManagement();
+      
+      function loadRMFData() {
+        $.getJSON('/rmf/data', function(data) {
+          node.rmfData = data;
+          
+          if (data.status === 'not_initialized') {
+            TaskV2RMFUtils.showDataStatus('RMF not initialized. Deploy RMF Config node first.', 'info');
+          } else if (data.status === 'error') {
+            TaskV2RMFUtils.showDataStatus('Error loading RMF data: ' + data.message, 'error');
+          } else if (data.robots.length === 0) {
+            TaskV2RMFUtils.showDataStatus('No RMF data available. Check RMF system status.', 'info');
+          } else {
+            const locationCount = (data.navGraphs || []).reduce((count, ng) => count + (ng.vertices || []).length, 0);
+            const zoneCount = (data.zones || []).length;
+            TaskV2RMFUtils.showDataStatus(`Loaded ${data.robots.length} robots, ${locationCount} locations, ${zoneCount} zones`, 'success');
+          }
+          
+          TaskV2RMFUtils.populateRobotDropdown({ node });
+          TaskV2RMFUtils.populateFleetDropdown({ node });
+          
+          // Refresh event dropdowns with new data
+          const eventsContainer = $('#events-container');
+          if (eventsContainer.length > 0) {
+            TaskV2EventUtils.refreshAllEventDropdowns(eventsContainer);
+            
+            // If we have saved events, restore their values after refresh
+            if (node.events && node.events.length > 0) {
+              setTimeout(() => {
+                TaskV2EventUtils.restoreEventValues(eventsContainer, node.events);
+              }, 200);
+            }
+          }
+        }).fail(function(xhr, status, error) {
+          TaskV2RMFUtils.showDataStatus('Failed to connect to RMF data source', 'error');
+          node.rmfData = { robots: [], fleets: [], navGraphs: [], zones: [] };
+          TaskV2RMFUtils.populateRobotDropdown({ node });
+          TaskV2RMFUtils.populateFleetDropdown({ node });
+        });
+      }
+      
+      function setupRefreshButton() {
+        $('#refresh-rmf-data').on('click', function() {
+          const button = $(this);
+          const originalText = button.html();
+          
+          button.html('<i class="fa fa-spinner fa-spin"></i> Loading...');
+          button.prop('disabled', true);
+          
+          loadRMFData();
+          
+          setTimeout(() => {
+            button.html(originalText);
+            button.prop('disabled', false);
+            
+            // Refresh event dropdowns after data reload
+            const eventsContainer = $('#events-container');
+            if (eventsContainer.length > 0) {
+              TaskV2EventUtils.refreshAllEventDropdowns(eventsContainer);
+              
+              // If we have saved events, restore their values after refresh
+              if (node.events && node.events.length > 0) {
+                setTimeout(() => {
+                  TaskV2EventUtils.restoreEventValues(eventsContainer, node.events);
+                }, 200);
+              }
+            }
+          }, 1000);
+        });
+      }
+      
+      function setupChangeHandlers() {
+        TaskV2RMFUtils.setupRobotFleetHandlers({ node });
+      }
+      
+      function setupEventsManagement() {
+        const eventsContainer = $('#events-container');
+        
+        // Add event button
+        $('#add-event').on('click', function() {
+          TaskV2EventUtils.addEvent(eventsContainer);
+        });
+        
+        // Initialize with existing events or default
+        TaskV2EventUtils.setEventsData(eventsContainer, node.events);
+        
+        // If we have RMF data already loaded and events, restore values
+        if (node.rmfData && (node.rmfData.navGraphs?.length > 0 || node.rmfData.zones?.length > 0) && node.events?.length > 0) {
+          setTimeout(() => {
+            TaskV2EventUtils.restoreEventValues(eventsContainer, node.events);
+          }, 200);
+        }
+      }
+    },
+    
+    oneditsave: function() {
+      // Save events data
+      const eventsContainer = $('#events-container');
+      this.events = TaskV2EventUtils.getEventsData(eventsContainer);
+    }
+  });
+</script>
+
+<script type="text/html" data-template-name="start-taskV2">
+  <div class="form-row">
+    <label for="node-input-name">Name</label>
+    <input type="text" id="node-input-name">
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-config"><i class="fa fa-cogs"></i> RMF Config</label>
+    <input type="text" id="node-input-config" style="width: 60%;">
+    <button type="button" id="refresh-rmf-data" class="red-ui-button" style="margin-left: 10px; width: auto;">
+      <i class="fa fa-refresh"></i> Refresh Data
+    </button>
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-robot_name">Robot Name</label>
+    <select id="node-input-robot_name" style="width: 100%;">
+      <option value="">Use msg.rmf_robot_name (dispatch)</option>
+    </select>
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-robot_fleet">Robot Fleet</label>
+    <select id="node-input-robot_fleet" style="width: 100%;">
+      <option value="">Use msg.rmf_robot_fleet (dispatch)</option>
+    </select>
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-task_category">Task Category</label>
+    <input type="text" id="node-input-task_category" placeholder="e.g., Patrol, Cleaning, Custom Task" style="width: 100%;">
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-task_detail">Task Detail</label>
+    <input type="text" id="node-input-task_detail" placeholder="Optional description" style="width: 100%;">
+  </div>
+  
+  <div class="form-row">
+    <label>Events</label>
+    <div style="margin-top: 10px;">
+      <button type="button" id="add-event" class="red-ui-button">
+        <i class="fa fa-plus"></i> Add Event
+      </button>
+    </div>
+    <div id="events-container" style="margin-top: 10px; max-height: 400px; overflow-y: auto;">
+      <!-- Events will be dynamically added here -->
+    </div>
+  </div>
+  
+  <div class="form-tips">
+    <b>RMF Task V2:</b><br/>
+    Creates static compose tasks with predefined sequences of events. Unlike Dynamic Events, Task V2 executes a fixed workflow from start to completion.<br/><br/>
+    
+    <b>Robot Assignment:</b><br/>
+    • Specify robot name + fleet for dedicated assignment<br/>
+    • Leave empty for automatic dispatch to any available robot<br/><br/>
+    
+    <b>Events:</b><br/>
+    • Go To Place: Navigate to a specific waypoint location<br/>
+    • Go To Zone: Navigate to a zone with optional parking preferences<br/>
+    • Perform Action: Execute custom actions (teleop, cleaning, etc.)<br/>
+    • Events execute in order as a sequence within a single phase
+  </div>
+</script>
+
+<script type="text/html" data-help-name="start-taskV2">
+  <p>Creates and executes RMF Task V2 compose tasks with static event sequences. This node handles the complete task lifecycle from creation to completion.</p>
+  
+  <h3>Configuration</h3>
+  <dl class="message-properties">
+    <dt>Robot Name <span class="property-type">string</span></dt>
+    <dd>Target robot name (optional for dispatch). Select from dropdown or use "Use msg.rmf_robot_name".</dd>
+    
+    <dt>Robot Fleet <span class="property-type">string</span></dt>
+    <dd>Target robot fleet (optional for dispatch). Auto-selected when robot is chosen.</dd>
+    
+    <dt>Task Title <span class="property-type">string</span></dt>
+    <dd>Descriptive category for the task (e.g., "Patrol", "Cleaning").</dd>
+    
+    <dt>Task Detail <span class="property-type">string</span></dt>
+    <dd>Optional detailed description of the task.</dd>
+    
+    <dt>Events <span class="property-type">array</span></dt>
+    <dd>Sequence of events to execute. Events run in order within a single phase.</dd>
+  </dl>
+  
+  <h3>Inputs</h3>
+  <dl class="message-properties">
+    <dt>msg.rmf_robot_name <span class="property-type">string</span></dt>
+    <dd>Robot name (overrides config)</dd>
+    
+    <dt>msg.rmf_robot_fleet <span class="property-type">string</span></dt>
+    <dd>Robot fleet (overrides config)</dd>
+    
+    <dt>msg.task_category <span class="property-type">string</span></dt>
+    <dd>Task category (overrides config)</dd>
+    
+    <dt>msg.task_detail <span class="property-type">string</span></dt>
+    <dd>Task detail (overrides config)</dd>
+    
+    <dt>msg.events <span class="property-type">array</span></dt>
+    <dd>Events array (overrides config)</dd>
+  </dl>
+  
+  <h3>Outputs</h3>
+  <ol class="node-ports">
+    <li>Success
+      <dl class="message-properties">
+        <dt>payload.status <span class="property-type">string</span></dt>
+        <dd>"completed" when task finishes successfully</dd>
+        <dt>payload.task_id <span class="property-type">string</span></dt>
+        <dd>The RMF task ID</dd>
+        <dt>payload.robot_name <span class="property-type">string</span></dt>
+        <dd>Assigned robot name</dd>
+        <dt>payload.robot_fleet <span class="property-type">string</span></dt>
+        <dd>Assigned robot fleet</dd>
+        <dt>payload.final_status <span class="property-type">string</span></dt>
+        <dd>Final task status from RMF</dd>
+      </dl>
+    </li>
+    <li>Failed
+      <dl class="message-properties">
+        <dt>payload.status <span class="property-type">string</span></dt>
+        <dd>"failed", "cancelled", "waiting", or "error"</dd>
+        <dt>payload.reason <span class="property-type">string</span></dt>
+        <dd>Description of the failure</dd>
+        <dt>payload.task_id <span class="property-type">string</span></dt>
+        <dd>The RMF task ID (if created)</dd>
+      </dl>
+    </li>
+    <li>Status
+      <dl class="message-properties">
+        <dt>payload <span class="property-type">object</span></dt>
+        <dd>Raw status data from RMF task manager (varies by update type)</dd>
+        <dt>topic <span class="property-type">string</span></dt>
+        <dd>Message topic: "task/{task_id}/status", "task/{task_id}/feedback", or "task/{task_id}/complete"</dd>
+        <dt>timestamp <span class="property-type">string</span></dt>
+        <dd>ISO timestamp when the status update was received</dd>
+      </dl>
+      <p><strong>Status Update Types:</strong></p>
+      <ul>
+        <li><strong>Task Status:</strong> Direct RMF task state updates with complete task information</li>
+        <li><strong>Goal Feedback:</strong> Progress updates during task execution (progress, current_phase, etc.)</li>
+        <li><strong>Goal Complete:</strong> Final completion data with execution time and results</li>
+      </ul>
+    </li>
+  </ol>
+  
+  <h3>Details</h3>
+  <p>This node creates RMF Task V2 compose tasks with static event sequences. Unlike Dynamic Events, these tasks have a predefined workflow that executes from start to completion without runtime modification.</p>
+  
+  <p><strong>Task Structure:</strong> Task → Phase → Sequence → Events</p>
+  
+  <p><strong>Supported Events:</strong></p>
+  <ul>
+    <li><strong>Go To Place:</strong> Navigate robot to a specific waypoint</li>
+    <li><strong>Go To Zone:</strong> Navigate robot to a zone with optional parking spots and facing direction</li>
+    <li><strong>Perform Action:</strong> Execute custom actions with configurable category and description</li>
+  </ul>
+  
+  <p><strong>Assignment:</strong> Specify robot/fleet for dedicated assignment, or leave empty for automatic dispatch to any available robot.</p>
+</script>

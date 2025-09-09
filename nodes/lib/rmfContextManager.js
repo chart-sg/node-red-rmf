@@ -159,6 +159,10 @@ async function createRMFTask(taskData, configNode) {
   return rmfTaskManager.createRMFTask(taskData, configNode);
 }
 
+async function createTaskV2(taskRequest, configNode) {
+  return rmfTaskManager.createTaskV2(taskRequest, configNode);
+}
+
 async function subscribeToTaskStatus(taskId, onStatusUpdate, configNode, options = {}) {
   return rmfTaskManager.subscribeToTaskStatus(taskId, onStatusUpdate, configNode, options);
 }
@@ -294,6 +298,7 @@ module.exports = {
   softCleanup,
   // Task management functions
   createRMFTask,
+  createTaskV2,
   subscribeToTaskStatus,
   unsubscribeFromTaskStatus,
   getActiveTaskSubscriptions: rmfTaskManager.getActiveTaskSubscriptions,

@@ -1,0 +1,296 @@
+<script type="text/javascript">
+  // RMF Form Utilities specific to CancelTaskV2
+  const CancelTaskV2RMFUtils = {
+    populateRobotDropdown: function(options = {}) {
+      const { node, selectId = 'node-input-robot_name', placeholder = 'Use msg.rmf_robot_name', valueProperty = 'robot_name' } = options;
+      const select = $(`#${selectId}`);
+      const currentValue = node.isLoaded ? select.val() : node[valueProperty];
+      
+      select.empty().append(`<option value="">${placeholder}</option>`);
+      
+      if (node.rmfData && node.rmfData.robots && node.rmfData.robots.length > 0) {
+        node.rmfData.robots.forEach(robot => {
+          select.append(`<option value="${robot.name}" data-fleet="${robot.fleet}">${robot.name} (${robot.fleet})</option>`);
+        });
+      }
+      
+      select.val(currentValue || '');
+    },
+
+    populateFleetDropdown: function(options = {}) {
+      const { node, selectId = 'node-input-robot_fleet', placeholder = 'Use msg.rmf_robot_fleet', valueProperty = 'robot_fleet' } = options;
+      const select = $(`#${selectId}`);
+      const currentValue = node.isLoaded ? select.val() : node[valueProperty];
+      
+      select.empty().append(`<option value="">${placeholder}</option>`);
+      
+      if (node.rmfData && node.rmfData.fleets && node.rmfData.fleets.length > 0) {
+        node.rmfData.fleets.forEach(fleet => {
+          select.append(`<option value="${fleet}">${fleet}</option>`);
+        });
+      }
+      
+      select.val(currentValue || '');
+    },
+
+    setupRobotFleetHandlers: function(options = {}) {
+      const { node, robotSelectId = 'node-input-robot_name', fleetSelectId = 'node-input-robot_fleet' } = options;
+      const robotSelect = $(`#${robotSelectId}`);
+      const fleetSelect = $(`#${fleetSelectId}`);
+
+      robotSelect.off('change').on('change', function() {
+        const selectedRobot = $(this).val();
+        const selectedOption = $(this).find('option:selected');
+        const robotFleet = selectedOption.data('fleet');
+        
+        if (selectedRobot && selectedRobot !== '' && robotFleet) {
+          fleetSelect.val(robotFleet);
+        } else {
+          fleetSelect.val('');
+        }
+      });
+
+      fleetSelect.off('change').on('change', function() {
+        const selectedFleet = $(this).val();
+        const currentRobot = robotSelect.val();
+        
+        if (currentRobot && selectedFleet && node.rmfData && node.rmfData.robots) {
+          const robot = node.rmfData.robots.find(r => r.name === currentRobot);
+          if (robot && robot.fleet !== selectedFleet) {
+            robotSelect.val('');
+          }
+        }
+        
+        if (selectedFleet && selectedFleet !== '') {
+          robotSelect.empty().append('<option value="">Use msg.rmf_robot_name</option>');
+          if (node.rmfData && node.rmfData.robots) {
+            node.rmfData.robots.forEach(robot => {
+              if (robot.fleet === selectedFleet) {
+                robotSelect.append(`<option value="${robot.name}" data-fleet="${robot.fleet}">${robot.name} (${robot.fleet})</option>`);
+              }
+            });
+          }
+          const robotFromFleet = node.rmfData.robots ? node.rmfData.robots.find(r => r.name === currentRobot && r.fleet === selectedFleet) : null;
+          if (robotFromFleet) {
+            robotSelect.val(currentRobot);
+          }
+        } else {
+          robotSelect.empty().append('<option value="">Use msg.rmf_robot_name</option>');
+          if (node.rmfData && node.rmfData.robots) {
+            node.rmfData.robots.forEach(robot => {
+              robotSelect.append(`<option value="${robot.name}" data-fleet="${robot.fleet}">${robot.name} (${robot.fleet})</option>`);
+            });
+          }
+          robotSelect.val(currentRobot);
+        }
+      });
+    },
+
+    showDataStatus: function(message, type = 'info', configSelectId = 'node-input-config') {
+      $('.rmf-data-status').remove();
+      let color = '#2196f3', icon = 'fa-info-circle';
+      if (type === 'error') { color = '#f44336'; icon = 'fa-exclamation-triangle'; }
+      else if (type === 'success') { color = '#4caf50'; icon = 'fa-check-circle'; }
+      const statusDiv = $(`<div class="rmf-data-status form-tips" style="color: ${color}; margin-top: 10px;"><i class="fa ${icon}" style="margin-right: 5px;"></i>${message}</div>`);
+      $(`#${configSelectId}`).closest('.form-row').after(statusDiv);
+    }
+  };
+
+  RED.nodes.registerType('cancel-taskV2', {
+    category: 'RMF Task V2',
+    color: '#f44336',
+    defaults: {
+      name: { value: '' },
+      config: { type: 'rmf-config', required: true },
+      robot_name: { value: '' },
+      robot_fleet: { value: '' },
+      task_id: { value: '' }
+    },
+    inputs: 1,
+    outputs: 2,
+    outputLabels: ["success", "failed"],
+    icon: 'font-awesome/fa-stop-circle',
+    label: function () {
+      return this.name || 'cancel-taskV2';
+    },
+    oneditprepare: function() {
+      const node = this;
+      
+      console.log('Cancel Task V2 oneditprepare');
+      
+      // Initialize data storage
+      node.rmfData = {
+        robots: [],
+        fleets: [],
+        navGraphs: [],
+        zones: []
+      };
+      
+      // Load RMF data
+      loadRMFData();
+      
+      // Setup change handlers
+      setupChangeHandlers();
+      
+      // Setup refresh button
+      setupRefreshButton();
+      
+      function loadRMFData() {
+        $.getJSON('/rmf/data', function(data) {
+          node.rmfData = data;
+          
+          if (data.status === 'not_initialized') {
+            CancelTaskV2RMFUtils.showDataStatus('RMF not initialized. Deploy RMF Config node first.', 'info');
+          } else if (data.status === 'error') {
+            CancelTaskV2RMFUtils.showDataStatus('Error loading RMF data: ' + data.message, 'error');
+          } else if (data.robots.length === 0) {
+            CancelTaskV2RMFUtils.showDataStatus('No RMF data available. Check RMF system status.', 'info');
+          } else {
+            CancelTaskV2RMFUtils.showDataStatus(`Loaded ${data.robots.length} robots, ${data.fleets.length} fleets`, 'success');
+          }
+          
+          CancelTaskV2RMFUtils.populateRobotDropdown({ node });
+          CancelTaskV2RMFUtils.populateFleetDropdown({ node });
+        }).fail(function(xhr, status, error) {
+          CancelTaskV2RMFUtils.showDataStatus('Failed to connect to RMF data source', 'error');
+          node.rmfData = { robots: [], fleets: [], navGraphs: [], zones: [] };
+          CancelTaskV2RMFUtils.populateRobotDropdown({ node });
+          CancelTaskV2RMFUtils.populateFleetDropdown({ node });
+        });
+      }
+      
+      function setupRefreshButton() {
+        $('#refresh-rmf-data').on('click', function() {
+          const button = $(this);
+          const originalText = button.html();
+          
+          button.html('<i class="fa fa-spinner fa-spin"></i> Loading...');
+          button.prop('disabled', true);
+          
+          loadRMFData();
+          
+          setTimeout(() => {
+            button.html(originalText);
+            button.prop('disabled', false);
+          }, 1000);
+        });
+      }
+      
+      function setupChangeHandlers() {
+        CancelTaskV2RMFUtils.setupRobotFleetHandlers({ node });
+      }
+    }
+  });
+</script>
+
+<script type="text/html" data-template-name="cancel-taskV2">
+  <div class="form-row">
+    <label for="node-input-name">Name</label>
+    <input type="text" id="node-input-name">
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-config"><i class="fa fa-cogs"></i> RMF Config</label>
+    <input type="text" id="node-input-config" style="width: 60%;">
+    <button type="button" id="refresh-rmf-data" class="red-ui-button" style="margin-left: 10px; width: auto;">
+      <i class="fa fa-refresh"></i> Refresh Data
+    </button>
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-task_id">Task ID</label>
+    <input type="text" id="node-input-task_id" placeholder="Use msg.task_id or auto-detect from robot" style="width: 100%;">
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-robot_name">Robot Name</label>
+    <select id="node-input-robot_name" style="width: 100%;">
+      <option value="">Use msg.rmf_robot_name</option>
+    </select>
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-robot_fleet">Robot Fleet</label>
+    <select id="node-input-robot_fleet" style="width: 100%;">
+      <option value="">Use msg.rmf_robot_fleet</option>
+    </select>
+  </div>
+  
+  <div class="form-tips">
+    <b>Task Cancellation Logic:</b><br/>
+    • If Task ID is provided, it will be used directly<br/>
+    • If Robot Name is provided (with or without fleet), the node will find and cancel the active task for that robot<br/>
+    • Fleet will auto-populate when Robot Name is selected<br/>
+    • Either Task ID or Robot Name must be specified<br/><br/>
+    
+    <b>Priority Order:</b><br/>
+    1. Use msg.task_id or configured Task ID<br/>
+    2. If no Task ID, find active task for msg.rmf_robot_name or configured Robot Name<br/>
+    3. Auto-detect fleet from robot name if not provided
+  </div>
+</script>
+
+<script type="text/html" data-help-name="cancel-taskV2">
+  <p>Cancels RMF Task V2 compose tasks. Can cancel by task ID directly or by finding the active task for a specific robot.</p>
+  
+  <h3>Configuration</h3>
+  <dl class="message-properties">
+    <dt>Task ID <span class="property-type">string</span></dt>
+    <dd>Specific task ID to cancel (optional if robot name provided).</dd>
+    
+    <dt>Robot Name <span class="property-type">string</span></dt>
+    <dd>Robot name to find and cancel active task (optional if task ID provided).</dd>
+    
+    <dt>Robot Fleet <span class="property-type">string</span></dt>
+    <dd>Robot fleet (auto-populated when robot is selected).</dd>
+  </dl>
+  
+  <h3>Inputs</h3>
+  <dl class="message-properties">
+    <dt>msg.task_id <span class="property-type">string</span></dt>
+    <dd>Task ID to cancel (overrides config)</dd>
+    
+    <dt>msg.rmf_robot_name <span class="property-type">string</span></dt>
+    <dd>Robot name (overrides config)</dd>
+    
+    <dt>msg.rmf_robot_fleet <span class="property-type">string</span></dt>
+    <dd>Robot fleet (overrides config)</dd>
+  </dl>
+  
+  <h3>Outputs</h3>
+  <ol class="node-ports">
+    <li>Success
+      <dl class="message-properties">
+        <dt>payload.status <span class="property-type">string</span></dt>
+        <dd>"cancelled" when task is successfully cancelled</dd>
+        <dt>payload.task_id <span class="property-type">string</span></dt>
+        <dd>The cancelled task ID</dd>
+        <dt>payload.robot_name <span class="property-type">string</span></dt>
+        <dd>Robot name (if applicable)</dd>
+        <dt>payload.robot_fleet <span class="property-type">string</span></dt>
+        <dd>Robot fleet (if applicable)</dd>
+      </dl>
+    </li>
+    <li>Failed
+      <dl class="message-properties">
+        <dt>payload.status <span class="property-type">string</span></dt>
+        <dd>"failed" or "error"</dd>
+        <dt>payload.reason <span class="property-type">string</span></dt>
+        <dd>Description of the failure</dd>
+        <dt>payload.task_id <span class="property-type">string</span></dt>
+        <dd>The task ID (if known)</dd>
+      </dl>
+    </li>
+  </ol>
+  
+  <h3>Details</h3>
+  <p>This node cancels RMF Task V2 compose tasks using the RMF Web API. It supports two cancellation modes:</p>
+  
+  <p><strong>Direct Cancellation:</strong> Provide a task ID to cancel a specific task.</p>
+  
+  <p><strong>Robot-based Cancellation:</strong> Provide robot name (and optionally fleet) to find and cancel the active task for that robot.</p>
+  
+  <p><strong>Auto-detection:</strong> The node can automatically detect the robot's fleet and find active tasks.</p>
+  
+  <p><strong>Validation:</strong> Either task_id or robot_name must be provided. The node will validate parameters and show appropriate error messages.</p>
+</script>

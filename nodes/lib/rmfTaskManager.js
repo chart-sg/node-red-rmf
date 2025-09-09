@@ -239,6 +239,73 @@ async function createRMFTask(taskData, configNode) {
 }
 
 /**
+ * Create RMF Task V2 with static compose structure
+ * @param {Object} taskRequest - Task V2 request payload
+ * @param {Object} configNode - RMF configuration node
+ * @returns {Promise<Object>} Creation result
+ */
+async function createTaskV2(taskRequest, configNode) {
+  try {
+    if (!configNode) {
+      throw new Error('No RMF config provided');
+    }
+    
+    const axios = require('axios');
+    const { host, port, jwt } = configNode;
+    
+    // Add required fields to request
+    if (!taskRequest.request.unix_millis_request_time) {
+      taskRequest.request.unix_millis_request_time = 0;
+    }
+    if (!taskRequest.request.unix_millis_earliest_start_time) {
+      taskRequest.request.unix_millis_earliest_start_time = 0;
+    }
+    if (!taskRequest.request.requester) {
+      taskRequest.request.requester = "NR";
+    }
+    
+    // Determine endpoint based on request type
+    let endpoint;
+    if (taskRequest.type === 'robot_task_request') {
+      endpoint = '/tasks/robot_task';
+    } else if (taskRequest.type === 'dispatch_task_request') {
+      endpoint = '/tasks/dispatch_task';
+    } else {
+      throw new Error(`Unsupported task request type: ${taskRequest.type}`);
+    }
+    
+    // Debug logging
+    console.log(`RMF: Creating Task V2 with endpoint: ${endpoint}`);
+    console.log(`RMF: Task V2 payload:`, JSON.stringify(taskRequest, null, 2));
+    
+    const response = await axios.post(`http://${host}:${port}${endpoint}`, taskRequest, {
+      headers: {
+        'Authorization': `Bearer ${jwt}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (response.data && response.data.state && response.data.state.booking) {
+      return {
+        success: true,
+        taskId: response.data.state.booking.id,
+        taskData: response.data,
+        status: response.data.state.status
+      };
+    } else {
+      throw new Error('Invalid response format from RMF API');
+    }
+    
+  } catch (error) {
+    console.error('RMF: Failed to create Task V2:', error.message);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+/**
  * Subscribe to task status updates via WebSocket and polling
  * @param {string} taskId - Task ID to subscribe to
  * @param {Function} onStatusUpdate - Callback for status updates
@@ -830,6 +897,59 @@ function getRobotContext(robotName, fleetName) {
 }
 
 /**
+ * Cancel an RMF task using the RMF Web API
+ * @param {string} taskId - Task ID to cancel
+ * @param {Object} configNode - RMF configuration node with host, port, jwt
+ * @returns {Promise<Object>} Cancel result
+ */
+async function cancelRMFTask(taskId, configNode) {
+  try {
+    if (!taskId) {
+      throw new Error('Task ID is required');
+    }
+    
+    if (!configNode) {
+      throw new Error('No RMF config provided');
+    }
+
+    const axios = require('axios');
+    const { host, port, jwt } = configNode;
+    const baseUrl = `http://${host}:${port}`;
+
+    const payload = {
+      type: 'cancel_task_request',
+      task_id: taskId,
+      labels: ['admin']
+    };
+
+    console.log(`RMF Task Manager: Sending cancel request for task ${taskId}`);
+
+    const response = await axios.post(`${baseUrl}/tasks/cancel_task`, payload, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(jwt && { 'Authorization': `Bearer ${jwt}` }),
+      }
+    });
+
+    const result = response.data;
+    console.log(`RMF Task Manager: Cancel response:`, result);
+
+    return {
+      success: true,
+      result: result,
+      taskId: taskId
+    };
+  } catch (error) {
+    console.error('RMF Task Manager: Error cancelling task:', error);
+    return {
+      success: false,
+      error: error.response?.data?.message || error.message,
+      taskId: taskId
+    };
+  }
+}
+
+/**
  * Clear active end events tracking (for cleanup or reset)
  * @returns {void}
  */
@@ -841,6 +961,8 @@ function clearActiveEndEvents() {
 module.exports = {
   setRobotContextProvider,
   createRMFTask,
+  createTaskV2,
+  cancelRMFTask,
   subscribeToTaskStatus,
   unsubscribeFromTaskStatus,
   getActiveTaskSubscriptions,
