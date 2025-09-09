@@ -313,30 +313,41 @@ module.exports = function (RED) {
           try {
             console.log(`[START-TASKV2] Task ${taskId} status update:`, data.status);
             
-            // Send raw status data directly to third output (status output)
+            // Send status data to status output
             const statusMsg = {
               payload: data, // Send the raw data from rmfTaskManager status handler
               topic: `task/${taskId}/status`,
               timestamp: new Date().toISOString()
             };
-            node.send([null, null, statusMsg]); // Send to status output
+            node.send([null, null, statusMsg]);
             
-            if (data.status === 'completed') {
+            // Check for terminal states
+            if (data.status && ['completed', 'failed', 'canceled', 'cancelled'].includes(data.status.toLowerCase())) {
+              console.log(`[START-TASKV2] Task ${taskId} reached terminal state: ${data.status}`);
               clearTimeout(timeout);
-              rmfContextManager.unsubscribeFromTaskStatus(taskId);
-              resolve({
-                success: true,
-                finalStatus: data.status
-              });
-            } else if (data.status === 'failed' || data.status === 'cancelled') {
-              clearTimeout(timeout);
-              rmfContextManager.unsubscribeFromTaskStatus(taskId);
-              resolve({
-                success: false,
-                error: `Task ${data.status}: ${data.error || 'Unknown error'}`,
-                finalStatus: data.status
-              });
+              
+              // Send final result based on status
+              if (data.status.toLowerCase() === 'completed') {
+                setStatus('green', 'dot', 'Task completed');
+                resolve({
+                  success: true,
+                  taskId: taskId,
+                  status: data.status,
+                  result: data
+                });
+              } else {
+                setStatus('yellow', 'ring', `Task ${data.status}`);
+                resolve({
+                  success: false,
+                  taskId: taskId,
+                  status: data.status,
+                  error: `Task ${data.status}`,
+                  result: data
+                });
+              }
+              return;
             }
+            
             // Continue monitoring for other statuses (active, queued, etc.)
           } catch (error) {
             clearTimeout(timeout);
