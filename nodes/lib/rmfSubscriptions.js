@@ -83,7 +83,11 @@ class RMFSubscriptions {
       console.log('RMF: Setting up nav_graphs subscription for building map and zone data...');
       
       // Use the correct QoS configuration that works with TRANSIENT_LOCAL
-      const rclnodejs = require('rclnodejs');
+      // Get rclnodejs from SharedManager (required dependency)
+      const ros2Bridge = require('@chart/node-red-ros2-manager');
+      const manager = ros2Bridge.getROS2Manager();
+      const rclnodejs = manager.getRclnodejs();
+      
       const qos = new rclnodejs.QoS();
       qos.reliability = rclnodejs.QoS.ReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_RELIABLE;
       qos.durability = rclnodejs.QoS.DurabilityPolicy.RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL;
@@ -283,7 +287,11 @@ class RMFSubscriptions {
       console.log('RMF: Setting up service clients... (DEPRECATED - using nav_graphs subscription instead)');
       
       // Setup building map service client (kept for backward compatibility)
-      const rclnodejs = require('rclnodejs');
+      // Note: We don't actually use rclnodejs directly here, just for consistency
+      const ros2Bridge = require('@chart/node-red-ros2-manager');
+      const manager = ros2Bridge.getROS2Manager();
+      // Verify SharedManager is available (no need to store rclnodejs here)
+      manager.getRclnodejs();
       
       this.serviceClients.buildingMap = this.rosNode.createClient(
         'rmf_building_map_msgs/srv/GetBuildingMap',

@@ -1,5 +1,9 @@
 // File: nodes/lib/rmfContextManager.js
-const rclnodejs = require('rclnodejs');
+// Get rclnodejs from SharedManager (required dependency)
+const ros2Bridge = require('@chart/node-red-ros2-manager');
+const manager = ros2Bridge.getROS2Manager();
+const rclnodejs = manager.getRclnodejs();
+
 const EventEmitter = require('events');
 
 // Import the new modular components

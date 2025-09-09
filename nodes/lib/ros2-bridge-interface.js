@@ -18,6 +18,7 @@ try {
     useBridge = false;
     try {
         rclnodejs = require('rclnodejs');
+        console.log('[RMF-ROS2Manager] Direct rclnodejs loaded as fallback');
     } catch (rclError) {
         console.error('[RMF-ROS2Manager] Failed to load rclnodejs:', rclError.message);
         throw new Error('Neither ROS2 manager nor rclnodejs is available');
@@ -38,6 +39,24 @@ class ROS2BridgeInterface {
         this.useBridge = !!bridge;
         this.fallbackContext = null;
         console.log(`[RMF-ROS2Manager] Interface created, using bridge: ${this.useBridge}`);
+    }
+
+    /**
+     * Get the rclnodejs instance for message operations
+     * Ensures compatibility between bridge and fallback modes
+     * @returns {Object} rclnodejs instance
+     */
+    getRclnodejs() {
+        if (this.useBridge && bridge) {
+            const manager = bridge.getROS2Manager();
+            return manager.getRclnodejs();
+        }
+        
+        if (!rclnodejs) {
+            throw new Error('rclnodejs is not available in fallback mode');
+        }
+        
+        return rclnodejs;
     }
 
     /**
