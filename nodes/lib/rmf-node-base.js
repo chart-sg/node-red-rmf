@@ -191,7 +191,18 @@ class RMFNodeBase {
     const robotName = msg.robot_name || this.config.robot_name || msg._rmf_robot_name || msg.rmf_robot_name;
     const robotFleet = msg.robot_fleet || this.config.robot_fleet || msg._rmf_robot_fleet || msg.rmf_robot_fleet;
     const taskId = msg._rmf_task_id || msg.rmf_task_id;
-    const dynamicEventSeq = msg._rmf_dynamic_event_seq || msg.payload?.dynamic_event_seq;
+    
+    // Get dynamic event sequence from RMF context instead of relying on message
+    let dynamicEventSeq = null;
+    if (robotName && robotFleet) {
+      const robotContext = rmfContextManager.getRobotContext(robotName, robotFleet);
+      dynamicEventSeq = robotContext?.dynamic_event_seq;
+    }
+    
+    // Fallback to message if context not available
+    if (dynamicEventSeq === null || dynamicEventSeq === undefined) {
+      dynamicEventSeq = msg._rmf_dynamic_event_seq || msg.payload?.dynamic_event_seq;
+    }
 
     return {
       robotName,
@@ -305,7 +316,7 @@ class RMFNodeBase {
 
       // Set up goal callbacks
       const goalCallbacks = {
-        onCompletion: (result) => {
+        onGoalComplete: (result) => {
           if (result && result.success) {
             this.setStatus('green', 'dot', 'Completed');
             this.sendSuccess(this.currentMsg, {
@@ -361,6 +372,14 @@ class RMFNodeBase {
    */
   sendSuccess(msg, payload) {
     const successMsg = Object.assign({}, msg, { payload });
+    
+    // Preserve RMF metadata for next node in chain (excluding dynamic_event_seq)
+    const params = this.extractRMFParameters(msg);
+    if (params.taskId) successMsg.rmf_task_id = params.taskId;
+    if (params.robotName) successMsg.rmf_robot_name = params.robotName;
+    if (params.robotFleet) successMsg.rmf_robot_fleet = params.robotFleet;
+    // Note: dynamic_event_seq no longer passed through messages - retrieved from context
+    
     this.node.send([successMsg, null]);
   }
 

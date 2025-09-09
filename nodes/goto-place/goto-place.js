@@ -223,12 +223,30 @@ module.exports = function (RED) {
         // 5) Validate location is accessible by the specified fleet
         if (locationName && robotFleet) {
           // For regular waypoints, check if fleet can access the location
-          if (validatedLocation && validatedLocation.fleet_compatibility) {
-            if (!validatedLocation.fleet_compatibility.includes(robotFleet)) {
+          if (validatedLocation) {
+            // Check fleet compatibility - support fleets array, fleet_compatibility array, and direct fleet property
+            let isFleetCompatible = false;
+            let compatibleFleets = 'any';
+            
+            if (validatedLocation.fleets) {
+              // New multi-fleet format
+              isFleetCompatible = validatedLocation.fleets.includes(robotFleet);
+              compatibleFleets = validatedLocation.fleets.join(', ');
+            } else if (validatedLocation.fleet_compatibility) {
+              // Legacy fleet_compatibility array
+              isFleetCompatible = validatedLocation.fleet_compatibility.includes(robotFleet);
+              compatibleFleets = validatedLocation.fleet_compatibility.join(', ');
+            } else {
+              // Legacy single fleet property
+              isFleetCompatible = (validatedLocation.fleet === robotFleet || !validatedLocation.fleet);
+              compatibleFleets = validatedLocation.fleet || 'any';
+            }
+              
+            if (!isFleetCompatible) {
               setStatus('red', 'ring', 'Fleet cannot access location');
               msg.payload = { 
                 status: 'failed', 
-                reason: `Fleet "${robotFleet}" cannot access location "${locationName}". Compatible fleets: [${validatedLocation.fleet_compatibility.join(', ')}]` 
+                reason: `Fleet "${robotFleet}" cannot access location "${locationName}". Compatible fleets: [${compatibleFleets}]` 
               };
               send([null, msg, null]);
               return done();
@@ -236,12 +254,30 @@ module.exports = function (RED) {
           }
           
           // For zones, check if fleet can access the zone
-          if (validatedZone && validatedZone.fleet_compatibility) {
-            if (!validatedZone.fleet_compatibility.includes(robotFleet)) {
+          if (validatedZone) {
+            // Check fleet compatibility - support fleets array, fleet_compatibility array, and direct fleet property
+            let isFleetCompatible = false;
+            let compatibleFleets = 'any';
+            
+            if (validatedZone.fleets) {
+              // New multi-fleet format
+              isFleetCompatible = validatedZone.fleets.includes(robotFleet);
+              compatibleFleets = validatedZone.fleets.join(', ');
+            } else if (validatedZone.fleet_compatibility) {
+              // Legacy fleet_compatibility array
+              isFleetCompatible = validatedZone.fleet_compatibility.includes(robotFleet);
+              compatibleFleets = validatedZone.fleet_compatibility.join(', ');
+            } else {
+              // Legacy single fleet property
+              isFleetCompatible = (validatedZone.fleet === robotFleet || !validatedZone.fleet);
+              compatibleFleets = validatedZone.fleet || 'any';
+            }
+              
+            if (!isFleetCompatible) {
               setStatus('red', 'ring', 'Fleet cannot access zone');
               msg.payload = { 
                 status: 'failed', 
-                reason: `Fleet "${robotFleet}" cannot access zone "${locationName}". Compatible fleets: [${validatedZone.fleet_compatibility.join(', ')}]` 
+                reason: `Fleet "${robotFleet}" cannot access zone "${locationName}". Compatible fleets: [${compatibleFleets}]` 
               };
               send([null, msg, null]);
               return done();
@@ -535,6 +571,7 @@ module.exports = function (RED) {
             msg.rmf_task_id = taskId;
             msg.rmf_robot_name = robotName;
             msg.rmf_robot_fleet = robotFleet;
+            // Note: dynamic_event_seq now retrieved directly from RMF context by each node
             
             // Send to appropriate output
             if (goalResponse.success && goalResponse.status === 'completed') {

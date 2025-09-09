@@ -195,32 +195,85 @@ class RMFSubscriptions {
         this.context.locations = [];
       }
       
-      // Clear existing zones and update with new data
-      this.context.zones.length = 0;
+      // Update zones: Handle shared zones across multiple fleets
       zones.forEach(zone => {
-        this.context.zones.push({
-          name: zone.name,
-          type: zone.zone_type,
-          level: zone.level,
-          center: {
-            x: zone.center_x,
-            y: zone.center_y
-          },
-          yaw: zone.yaw,
-          dimensions: {
-            length: zone.length,
-            width: zone.width
-          },
-          vertices: zone.zone_vertices || [],
-          transitionLanes: zone.zone_transition_lanes || [],
-          graph: navGraphMsg.name
-        });
+        // Check if zone already exists (by name and position)
+        const existingZoneIndex = this.context.zones.findIndex(
+          z => z.name === zone.name && 
+               Math.abs(z.center.x - zone.center_x) < 0.01 && 
+               Math.abs(z.center.y - zone.center_y) < 0.01
+        );
+        
+        if (existingZoneIndex >= 0) {
+          // Zone exists - add this fleet to its accessibility list
+          const existingZone = this.context.zones[existingZoneIndex];
+          if (!existingZone.fleets) {
+            existingZone.fleets = [existingZone.fleet]; // Convert single fleet to array
+            delete existingZone.fleet; // Remove old single fleet property
+          }
+          if (!existingZone.fleets.includes(navGraphMsg.name)) {
+            existingZone.fleets.push(navGraphMsg.name);
+          }
+          // Update other properties if needed (keep most recent data)
+          existingZone.type = zone.zone_type;
+          existingZone.level = zone.level;
+          existingZone.center = { x: zone.center_x, y: zone.center_y };
+          existingZone.yaw = zone.yaw;
+          existingZone.dimensions = { length: zone.length, width: zone.width };
+          existingZone.vertices = zone.zone_vertices || [];
+          existingZone.transitionLanes = zone.zone_transition_lanes || [];
+          existingZone.graph = navGraphMsg.name;
+          existingZone.fleets = [...new Set(existingZone.fleets)]; // Remove duplicates
+        } else {
+          // New zone - add with fleet list
+          this.context.zones.push({
+            name: zone.name,
+            type: zone.zone_type,
+            level: zone.level,
+            center: {
+              x: zone.center_x,
+              y: zone.center_y
+            },
+            yaw: zone.yaw,
+            dimensions: {
+              length: zone.length,
+              width: zone.width
+            },
+            vertices: zone.zone_vertices || [],
+            transitionLanes: zone.zone_transition_lanes || [],
+            graph: navGraphMsg.name,
+            fleets: [navGraphMsg.name]  // Set fleets array when creating zone
+          });
+        }
       });
       
-      // Clear existing locations and update with new data from vertices
-      this.context.locations.length = 0;
+      // Update locations: Handle shared locations across multiple fleets
       locations.forEach(location => {
-        this.context.locations.push(location);
+        // Check if location already exists (by name and position)
+        const existingLocationIndex = this.context.locations.findIndex(
+          loc => loc.name === location.name && 
+                 Math.abs(loc.x - location.x) < 0.01 && 
+                 Math.abs(loc.y - location.y) < 0.01
+        );
+        
+        if (existingLocationIndex >= 0) {
+          // Location exists - add this fleet to its accessibility list
+          const existingLocation = this.context.locations[existingLocationIndex];
+          if (!existingLocation.fleets) {
+            existingLocation.fleets = [existingLocation.fleet]; // Convert single fleet to array
+            delete existingLocation.fleet; // Remove old single fleet property
+          }
+          if (!existingLocation.fleets.includes(navGraphMsg.name)) {
+            existingLocation.fleets.push(navGraphMsg.name);
+          }
+          // Update other properties if needed (keep most recent data)
+          Object.assign(existingLocation, location);
+          existingLocation.fleets = [...new Set(existingLocation.fleets)]; // Remove duplicates
+        } else {
+          // New location - add with fleet list
+          location.fleets = [navGraphMsg.name];
+          this.context.locations.push(location);
+        }
       });
       
       // Update navigation graph data
@@ -245,16 +298,7 @@ class RMFSubscriptions {
         this.context.navGraphs.push(graphData);
       }
       
-      // Also update locations and zones with fleet information
-      this.context.locations.forEach(location => {
-        location.fleet = navGraphMsg.name; // Associate location with fleet
-      });
-      
-      this.context.zones.forEach(zone => {
-        zone.fleet = navGraphMsg.name; // Associate zone with fleet
-      });
-      
-            console.log(`RMF: Updated context with ${zones.length} zones, ${locations.length} locations, and navigation graph '${navGraphMsg.name}'`);
+      console.log(`RMF: Updated context with ${zones.length} zones, ${locations.length} locations, and navigation graph '${navGraphMsg.name}'`);
       
       // Update the global rmfCore context as well for compatibility
       const rmfCore = require('./rmfCore');

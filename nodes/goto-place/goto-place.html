@@ -230,8 +230,14 @@
               if (!selectedLevel || zoneLevel === selectedLevel) {
                 // Check if zone belongs to selected fleet
                 let zoneMatchesFleet = true;
-                if (selectedFleet && zone.fleet) {
-                  zoneMatchesFleet = zone.fleet === selectedFleet;
+                if (selectedFleet) {
+                  if (zone.fleets) {
+                    // New multi-fleet format
+                    zoneMatchesFleet = zone.fleets.includes(selectedFleet);
+                  } else if (zone.fleet) {
+                    // Legacy single fleet format
+                    zoneMatchesFleet = zone.fleet === selectedFleet;
+                  }
                 }
                 
                 if (zoneMatchesFleet) {

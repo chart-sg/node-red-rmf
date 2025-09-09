@@ -45,8 +45,8 @@ module.exports = function(RED) {
                     teleop_duration: teleopDuration,
                     robot_name: params.robotName,
                     robot_fleet: params.robotFleet,
-                    task_id: params.taskId,
-                    dynamic_event_seq: params.dynamicEventSeq
+                    task_id: params.taskId
+                    // Note: dynamic_event_seq no longer included - retrieved from context
                 };
 
                 // Send goal using base class
