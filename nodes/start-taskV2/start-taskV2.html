@@ -152,8 +152,16 @@
           </div>
           <div class="form-row">
             <label>Zone Types (optional):</label>
-            <input type="text" class="event-zone-types" placeholder="e.g. patient_facing, left, right (default: all)" style="width: 100%;">
-            <div class="form-tips">Comma-separated list of zone entry types</div>
+            <select class="event-zone-types" multiple style="width: 100%; height: 80px;">
+              <option value="all" selected>All</option>
+              <option value="human_facing">Human Facing</option>
+              <option value="left">Left</option>
+              <option value="right">Right</option>
+              <option value="center">Center</option>
+              <option value="top">Top</option>
+              <option value="bottom">Bottom</option>
+            </select>
+            <div class="form-tips">Hold Ctrl/Cmd to select multiple zone entry types. 'All' is mutually exclusive with other selections.</div>
           </div>
           <div class="form-row">
             <label>Preferred Places (optional):</label>
@@ -196,6 +204,38 @@
           node.rmfData.zones.forEach(zone => {
             if (zone.name && zone.name.trim() !== '') {
               zoneSelect.append(`<option value="${zone.name}">${zone.name}</option>`);
+            }
+          });
+          
+          // Handle zone types selection logic
+          const zoneTypesSelect = detailsDiv.find('.event-zone-types');
+          let previousSelection = ['all']; // Track previous selection
+          
+          zoneTypesSelect.on('change', function() {
+            const selectedValues = $(this).val() || [];
+            const allSelected = selectedValues.includes('all');
+            const othersSelected = selectedValues.filter(v => v !== 'all');
+            
+            if (allSelected && othersSelected.length > 0) {
+              // Both 'all' and others are selected, determine which was added
+              const wasAllPreviouslySelected = previousSelection.includes('all');
+              
+              if (!wasAllPreviouslySelected) {
+                // 'all' was just selected, unselect all others
+                $(this).val(['all']);
+                previousSelection = ['all'];
+              } else {
+                // Another option was just selected, unselect 'all'
+                $(this).val(othersSelected);
+                previousSelection = othersSelected;
+              }
+            } else if (selectedValues.length === 0) {
+              // If nothing is selected, default to 'all'
+              $(this).val(['all']);
+              previousSelection = ['all'];
+            } else {
+              // Valid selection, update previous
+              previousSelection = selectedValues.slice();
             }
           });
           
@@ -392,7 +432,7 @@
             console.log('Set zone value to:', eventData.zone, 'Found in dropdown:', zoneSelect.find(`option[value="${eventData.zone}"]`).length > 0);
           }
           if (eventData.types && Array.isArray(eventData.types)) {
-            detailsDiv.find('.event-zone-types').val(eventData.types.join(','));
+            detailsDiv.find('.event-zone-types').val(eventData.types);
           }
           if (eventData.places && Array.isArray(eventData.places)) {
             setTimeout(() => {
@@ -468,9 +508,9 @@
           eventData.zone = eventDiv.find('.event-zone').val();
           
           // Parse zone types
-          const typesString = eventDiv.find('.event-zone-types').val();
-          if (typesString && typesString.trim()) {
-            eventData.types = typesString.split(',').map(t => t.trim()).filter(t => t);
+          const selectedTypes = eventDiv.find('.event-zone-types').val();
+          if (selectedTypes && selectedTypes.length > 0) {
+            eventData.types = selectedTypes;
           }
           
           // Get selected places with orientations (in order)
@@ -557,7 +597,7 @@
               console.log(`Set zone to ${eventData.zone}, result:`, zoneSelect.val());
             }
             if (eventData.types && Array.isArray(eventData.types)) {
-              eventDiv.find('.event-zone-types').val(eventData.types.join(','));
+              eventDiv.find('.event-zone-types').val(eventData.types);
             }
             if (eventData.places && Array.isArray(eventData.places)) {
               setTimeout(() => {
@@ -639,9 +679,9 @@
           currentData.description = eventDiv.find('.event-location').val();
         } else if (category === 'go_to_zone') {
           currentData.zone = eventDiv.find('.event-zone').val();
-          const typesString = eventDiv.find('.event-zone-types').val();
-          if (typesString && typesString.trim()) {
-            currentData.types = typesString.split(',').map(t => t.trim()).filter(t => t);
+          const selectedTypes = eventDiv.find('.event-zone-types').val();
+          if (selectedTypes && selectedTypes.length > 0) {
+            currentData.types = selectedTypes;
           }
           const selectedPlaces = [];
           eventDiv.find('.selected-waypoint-item').each(function() {
