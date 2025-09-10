@@ -21,7 +21,7 @@
       zone_preferred_waypoints: { value: [] },
       zone_final_facing: { value: '' },
       stubborn_period: { value: 0 },
-      parallel_behaviour: { value: 'abort' }
+      parallel_behaviour: { value: 'ignore' }
     },
     inputs: 1,
     outputs: 3,
@@ -63,6 +63,11 @@
       init();
       
       function init() {
+        // Initialize zone fields as hidden
+        $('#node-input-zone_type').closest('.form-row').hide();
+        $('#zone-preferred-waypoints-container').closest('.form-row').hide();
+        $('#node-input-zone_final_facing').closest('.form-row').hide();
+        
         loadRMFData().then(() => {
           populateAllDropdowns();
           setupEventHandlers();
@@ -340,16 +345,20 @@
         
         const zoneTypeRow = $('#node-input-zone_type').closest('.form-row');
         const zoneWaypointsRow = $('#zone-preferred-waypoints-container').closest('.form-row');
+        const zoneFinalFacingRow = $('#node-input-zone_final_facing').closest('.form-row');
         
         if (isZone && locationName) {
           zoneTypeRow.show();
           zoneWaypointsRow.show();
+          zoneFinalFacingRow.show();
           populateZoneTypeDropdown(locationName);
           populateZoneWaypointsInterface(locationName);
         } else {
           zoneTypeRow.hide();
           zoneWaypointsRow.hide();
+          zoneFinalFacingRow.hide();
           $('#node-input-zone_type').val(['all']);
+          $('#node-input-zone_final_facing').val('');
           // Clear waypoints interface
           $('.available-waypoints').empty();
           $('.selected-waypoints').empty();
@@ -878,9 +887,10 @@
   <div class="form-row">
     <label for="node-input-parallel_behaviour">Parallel Behaviour</label>
     <select id="node-input-parallel_behaviour" style="width: 100%;">
-      <option value="abort">Abort</option>
+      <option value="ignore">Ignore</option>
       <option value="overwrite">Overwrite</option>
     </select>
+    <div class="form-tips">How to handle new requests when robot is already executing a dynamic event. <strong>Ignore:</strong> Discard new request, let current task continue. <strong>Overwrite:</strong> Cancel current task and start new one.</div>
   </div>
   
   <div class="form-tips">

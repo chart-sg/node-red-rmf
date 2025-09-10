@@ -186,7 +186,7 @@ module.exports = function (RED) {
         });
         const stubbornPeriod = node.stubborn_period !== undefined ? node.stubborn_period : 
                                (msg.stubborn_period !== undefined ? msg.stubborn_period : 0);
-        const parallelBehaviour = node.parallel_behaviour || msg.parallel_behaviour || 'abort';
+        const parallelBehaviour = node.parallel_behaviour || msg.parallel_behaviour || 'ignore';
         
         // Extract task information from previous start-task node (prefer RMF metadata)
         const taskId = msg.rmf_task_id || (msg.payload && msg.payload.task_id) || msg.task_id;
@@ -516,20 +516,20 @@ module.exports = function (RED) {
         if (currentStatus === 'underway' || currentStatus === 'standby') {
           console.log(`[GOTO-PLACE] Robot is currently ${currentStatus} with event ID ${currentEventId}, applying parallel behavior: ${parallelBehaviour}`);
           
-          if (parallelBehaviour === 'abort') {
-            // Abort this new request, let existing event continue
-            setStatus('yellow', 'ring', 'Request aborted');
-            console.log(`[GOTO-PLACE] Aborting new request due to parallel behavior: abort (letting existing event continue)`);
+          if (parallelBehaviour === 'ignore') {
+            // Ignore this new request, let existing event continue
+            setStatus('yellow', 'ring', 'Request ignored');
+            console.log(`[GOTO-PLACE] Ignoring new request due to parallel behavior: ignore (letting existing event continue)`);
             
             msg.payload = { 
-              status: 'aborted', 
-              reason: `Robot is busy with existing dynamic event. New request aborted due to parallel behavior: ${parallelBehaviour}`,
+              status: 'ignored', 
+              reason: `Robot is busy with existing dynamic event. New request ignored due to parallel behavior: ${parallelBehaviour}`,
               rmf_robot_name: robotName,
               rmf_robot_fleet: robotFleet,
               location_name: locationName
             };
             
-            // Preserve RMF metadata even for aborted requests
+            // Preserve RMF metadata even for ignored requests
             msg.rmf_task_id = taskId;
             msg.rmf_robot_name = robotName;
             msg.rmf_robot_fleet = robotFleet;
