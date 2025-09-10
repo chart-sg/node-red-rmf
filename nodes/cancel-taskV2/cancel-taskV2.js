@@ -119,6 +119,17 @@ module.exports = function (RED) {
           return done();
         }
 
+        // Validate task_id format if provided (UUID format)
+        if (taskId && !isValidTaskId(taskId)) {
+          setStatus('red', 'ring', 'Invalid task ID format');
+          msg.payload = { 
+            status: 'failed', 
+            reason: `Invalid task_id format: ${taskId}. Expected UUID format (e.g., 4933ad12-0914-4120-b362-0bf580fd697e)` 
+          };
+          send([null, msg]);
+          return done();
+        }
+
         // If we have robot name but no fleet, try to get fleet from robot data
         if (robotName && !robotFleet) {
           const rmfData = rmfContextManager.getRMFData();
@@ -136,12 +147,13 @@ module.exports = function (RED) {
           const robotContext = rmfContextManager.getRobotContext(robotName, robotFleet);
           if (robotContext && robotContext.task_id) {
             taskId = robotContext.task_id;
-            console.log(`[CANCEL-TASKV2] Found active task ${taskId} for robot ${robotName} from robot context`);
+            console.log(`[CANCEL-TASKV2] Found current running task ${taskId} for robot ${robotName} from robot context`);
+            console.log(`[CANCEL-TASKV2] Warning: This will only cancel the current running task. Queued tasks won't be affected.`);
           } else {
             setStatus('red', 'ring', 'No active task found');
             msg.payload = { 
               status: 'failed', 
-              reason: `No active task found for robot ${robotName} in fleet ${robotFleet}` 
+              reason: `No active task found for robot ${robotName} in fleet ${robotFleet}. Note: Only current running tasks are detectable from robot context. For queued tasks, provide task_id directly.` 
             };
             send([null, msg]);
             return done();
@@ -168,20 +180,42 @@ module.exports = function (RED) {
           setStatus('green', 'dot', 'Task cancelled');
           msg.payload = {
             status: 'cancelled',
-            task_id: taskId,
-            robot_name: robotName,
-            robot_fleet: robotFleet,
+            rmf_task_id: taskId,
+            rmf_robot_name: robotName,
+            rmf_robot_fleet: robotFleet,
             timestamp: new Date().toISOString()
           };
           send([msg, null]); // Send to success output
         } else {
-          setStatus('red', 'ring', 'Cancel failed');
-          msg.payload = {
-            status: 'failed',
-            task_id: taskId,
-            reason: cancelResult.error,
-            timestamp: new Date().toISOString()
-          };
+          // Handle specific error cases
+          if (cancelResult.error && cancelResult.error.includes('not found')) {
+            setStatus('red', 'ring', 'Task not found');
+            msg.payload = {
+              status: 'failed',
+              task_id: taskId,
+              reason: `Task ${taskId} not found. It may have already completed or been cancelled.`,
+              error_type: 'task_not_found',
+              timestamp: new Date().toISOString()
+            };
+          } else if (cancelResult.error && cancelResult.error.includes('unauthorized')) {
+            setStatus('red', 'ring', 'Authorization failed');
+            msg.payload = {
+              status: 'failed',
+              task_id: taskId,
+              reason: `Authorization failed. Check JWT token configuration.`,
+              error_type: 'unauthorized',
+              timestamp: new Date().toISOString()
+            };
+          } else {
+            setStatus('red', 'ring', 'Cancel failed');
+            msg.payload = {
+              status: 'failed',
+              task_id: taskId,
+              reason: cancelResult.error,
+              error_type: 'api_error',
+              timestamp: new Date().toISOString()
+            };
+          }
           send([null, msg]); // Send to failed output
         }
         
@@ -197,6 +231,17 @@ module.exports = function (RED) {
         done(error);
       }
     });
+
+    // Validate task ID format (UUID)
+    function isValidTaskId(taskId) {
+      if (!taskId || typeof taskId !== 'string') {
+        return false;
+      }
+      
+      // UUID format: 8-4-4-4-12 hexadecimal characters
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      return uuidRegex.test(taskId);
+    }
   }
 
   RED.nodes.registerType('cancel-taskV2', CancelTaskV2Node, {

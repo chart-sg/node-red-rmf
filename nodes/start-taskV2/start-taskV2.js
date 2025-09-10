@@ -175,9 +175,9 @@ module.exports = function (RED) {
           setStatus('green', 'dot', 'Task completed');
           msg.payload = {
             status: 'completed',
-            task_id: createResult.taskId,
-            robot_name: robotName,
-            robot_fleet: robotFleet,
+            rmf_task_id: createResult.taskId,
+            rmf_robot_name: robotName,
+            rmf_robot_fleet: robotFleet,
             final_status: monitorResult.finalStatus,
             timestamp: new Date().toISOString()
           };
@@ -186,7 +186,7 @@ module.exports = function (RED) {
           setStatus('red', 'ring', 'Task failed');
           msg.payload = {
             status: 'failed',
-            task_id: createResult.taskId,
+            rmf_task_id: createResult.taskId,
             reason: monitorResult.error,
             timestamp: new Date().toISOString()
           };

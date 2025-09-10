@@ -218,14 +218,19 @@
   
   <div class="form-tips">
     <b>Task Cancellation Logic:</b><br/>
-    • If Task ID is provided, it will be used directly<br/>
-    • If Robot Name is provided (with or without fleet), the node will find and cancel the active task for that robot<br/>
+    • If Task ID is provided, it will be used directly (supports any task regardless of robot)<br/>
+    • If Robot Name is provided without Task ID, only the <strong>current running task</strong> will be cancelled<br/>
     • Fleet will auto-populate when Robot Name is selected<br/>
     • Either Task ID or Robot Name must be specified<br/><br/>
     
+    <b>Important Limitations:</b><br/>
+    • Auto-detection from robot name only finds the current running task<br/>
+    • Queued tasks require explicit task_id (UUID format: e.g., 4933ad12-0914-4120-b362-0bf580fd697e)<br/>
+    • Task ID format is validated (must be valid UUID)<br/><br/>
+    
     <b>Priority Order:</b><br/>
-    1. Use msg.task_id or configured Task ID<br/>
-    2. If no Task ID, find active task for msg.rmf_robot_name or configured Robot Name<br/>
+    1. Use msg.task_id or configured Task ID (direct cancellation)<br/>
+    2. If no Task ID, find current running task for robot name<br/>
     3. Auto-detect fleet from robot name if not provided
   </div>
 </script>
@@ -279,6 +284,8 @@
         <dd>Description of the failure</dd>
         <dt>payload.task_id <span class="property-type">string</span></dt>
         <dd>The task ID (if known)</dd>
+        <dt>payload.error_type <span class="property-type">string</span></dt>
+        <dd>Error category: "task_not_found", "unauthorized", "api_error", or "validation_error"</dd>
       </dl>
     </li>
   </ol>
@@ -286,11 +293,18 @@
   <h3>Details</h3>
   <p>This node cancels RMF Task V2 compose tasks using the RMF Web API. It supports two cancellation modes:</p>
   
-  <p><strong>Direct Cancellation:</strong> Provide a task ID to cancel a specific task.</p>
+  <p><strong>Direct Cancellation:</strong> Provide a task ID (UUID format) to cancel any specific task.</p>
   
-  <p><strong>Robot-based Cancellation:</strong> Provide robot name (and optionally fleet) to find and cancel the active task for that robot.</p>
+  <p><strong>Robot-based Cancellation:</strong> Provide robot name to cancel the current running task for that robot.</p>
   
-  <p><strong>Auto-detection:</strong> The node can automatically detect the robot's fleet and find active tasks.</p>
+  <p><strong>Important Limitations:</strong></p>
+  <ul>
+    <li>Robot-based cancellation only affects the <strong>current running task</strong></li>
+    <li>Queued tasks require explicit task_id</li>
+    <li>Task ID must be valid UUID format (e.g., 4933ad12-0914-4120-b362-0bf580fd697e)</li>
+  </ul>
+  
+  <p><strong>Error Handling:</strong> The node provides detailed error types for different failure scenarios including invalid task IDs, tasks not found, and authorization failures.</p>
   
   <p><strong>Validation:</strong> Either task_id or robot_name must be provided. The node will validate parameters and show appropriate error messages.</p>
 </script>

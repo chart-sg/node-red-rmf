@@ -167,9 +167,9 @@ module.exports = function (RED) {
             setStatus('green', 'dot', 'Task ready');
             msg.payload = {
               status: 'ready',
-              robot_name: robotName,
-              robot_fleet: robotFleet,
-              task_id: latestRobotContext.task_id,
+              rmf_robot_name: robotName,
+              rmf_robot_fleet: robotFleet,
+              rmf_task_id: latestRobotContext.task_id,
               dynamic_event_seq: latestRobotContext.dynamic_event_seq,
               message: `Reusing existing task for robot ${robotName}`
             };
@@ -233,17 +233,17 @@ module.exports = function (RED) {
         // Send success output with task information
         msg.payload = {
           status: 'ready',
-          task_id: createResult.taskId,
+          rmf_task_id: createResult.taskId,
           dynamic_event_seq: standbyResult.dynamicEventSeq,
           estimate: estimate
         };
         
         // Include robot info if specified
         if (robotName) {
-          msg.payload.robot_name = robotName;
+          msg.payload.rmf_robot_name = robotName;
         }
         if (robotFleet) {
-          msg.payload.robot_fleet = robotFleet;
+          msg.payload.rmf_robot_fleet = robotFleet;
         }
         
         // Add RMF metadata for persistence through the flow

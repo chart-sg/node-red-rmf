@@ -201,7 +201,7 @@ class RMFNodeBase {
     
     // Fallback to message if context not available
     if (dynamicEventSeq === null || dynamicEventSeq === undefined) {
-      dynamicEventSeq = msg._rmf_dynamic_event_seq || msg.payload?.dynamic_event_seq;
+      dynamicEventSeq = msg.rmf_dynamic_event_seq || msg._rmf_dynamic_event_seq || msg.dynamic_event_seq || msg.payload?.rmf_dynamic_event_seq || msg.payload?.dynamic_event_seq;
     }
 
     return {
@@ -224,14 +224,18 @@ class RMFNodeBase {
     if (!taskId) {
       return {
         valid: false,
-        error: 'Missing required RMF task context. This node should be connected after a start-task node.'
+        error: `Missing required RMF task_id. Found: ${taskId}. This ${this.nodeType} node should be connected after a start-task node.`,
+        field: 'task_id',
+        value: taskId
       };
     }
 
     if (dynamicEventSeq === undefined || dynamicEventSeq === null) {
       return {
         valid: false,
-        error: 'Missing required dynamic event sequence number. This node should be connected after a start-task node.'
+        error: `Missing required dynamic_event_seq. Found: ${dynamicEventSeq}. This ${this.nodeType} node should be connected after a start-task node.`,
+        field: 'dynamic_event_seq', 
+        value: dynamicEventSeq
       };
     }
 
@@ -373,12 +377,14 @@ class RMFNodeBase {
   sendSuccess(msg, payload) {
     const successMsg = Object.assign({}, msg, { payload });
     
-    // Preserve RMF metadata for next node in chain (excluding dynamic_event_seq)
+    // Preserve RMF metadata for next node in chain
     const params = this.extractRMFParameters(msg);
     if (params.taskId) successMsg.rmf_task_id = params.taskId;
     if (params.robotName) successMsg.rmf_robot_name = params.robotName;
     if (params.robotFleet) successMsg.rmf_robot_fleet = params.robotFleet;
-    // Note: dynamic_event_seq no longer passed through messages - retrieved from context
+    if (params.dynamicEventSeq !== undefined && params.dynamicEventSeq !== null) {
+      successMsg.rmf_dynamic_event_seq = params.dynamicEventSeq;
+    }
     
     this.node.send([successMsg, null]);
   }
@@ -397,12 +403,10 @@ class RMFNodeBase {
         if (!validation.valid) {
           console.log(`[${this.nodeType.toUpperCase()}] Validation failed: ${validation.error}`);
           console.log(`  Metadata:`, metadata);
+          console.log(`  Missing field: ${validation.field}, Found value: ${validation.value}`);
           
-          if (validation.error === 'robot_info') {
-            this.sendError('Missing robot name or fleet', validation.message);
-          } else if (validation.error === 'task_context') {
-            this.sendError('Missing task context', validation.message);
-          }
+          // Send detailed error message
+          this.sendError(`Validation failed: ${validation.field}`, validation.error);
           return;
         }
 

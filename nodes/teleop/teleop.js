@@ -41,12 +41,14 @@ module.exports = function(RED) {
 
                 // Prepare success data
                 const successData = {
+                    status: 'completed',
+                    action: 'teleop',
                     teleop_description: teleopDescription,
                     teleop_duration: teleopDuration,
-                    robot_name: params.robotName,
-                    robot_fleet: params.robotFleet,
-                    task_id: params.taskId
-                    // Note: dynamic_event_seq no longer included - retrieved from context
+                    rmf_robot_name: params.robotName,
+                    rmf_robot_fleet: params.robotFleet,
+                    rmf_task_id: params.taskId,
+                    rmf_dynamic_event_seq: params.dynamicEventSeq
                 };
 
                 // Send goal using base class

@@ -747,9 +747,10 @@ async function sendDynamicEventGoal(goalData, callbacks = {}) {
     
     console.log('RMF: Goal was accepted');
     
-    // Wait for the result (no timeout - robots can take time to move)
+    // Wait for the result
     console.log('RMF: Waiting for action result...');
     const result = await goalHandle.getResult();
+    
     console.log('RMF: Action result received:', result);
     
     let success = false;

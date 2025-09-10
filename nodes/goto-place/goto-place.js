@@ -142,7 +142,7 @@ module.exports = function (RED) {
         
         // Extract task information from previous start-task node (prefer RMF metadata)
         const taskId = msg.rmf_task_id || (msg.payload && msg.payload.task_id) || msg.task_id;
-        const dynamicEventSeq = msg.dynamic_event_seq || (msg.payload && msg.payload.dynamic_event_seq);
+        const dynamicEventSeq = msg.rmf_dynamic_event_seq || msg.dynamic_event_seq || (msg.payload && msg.payload.dynamic_event_seq) || (msg.payload && msg.payload.rmf_dynamic_event_seq);
 
         // Validate basic inputs using shared utility
         const basicValidation = validateBasicInputs({
@@ -157,11 +157,33 @@ module.exports = function (RED) {
         }
 
         // Validate that we have task information (should come from start-task node)
-        if (!taskId || !dynamicEventSeq) {
-          setStatus('red', 'ring', 'No task info');
+        if (!taskId || dynamicEventSeq === undefined || dynamicEventSeq === null) {
+          setStatus('red', 'ring', 'Missing task context');
+          
+          // Create detailed diagnostic information
+          const diagnostics = {
+            taskId: {
+              value: taskId,
+              found: !!taskId,
+              sources_checked: ['msg.rmf_task_id', 'msg.payload.task_id', 'msg.task_id']
+            },
+            dynamicEventSeq: {
+              value: dynamicEventSeq,
+              found: dynamicEventSeq !== undefined && dynamicEventSeq !== null,
+              sources_checked: ['msg.rmf_dynamic_event_seq', 'msg.dynamic_event_seq', 'msg.payload.dynamic_event_seq', 'msg.payload.rmf_dynamic_event_seq']
+            }
+          };
+          
+          const missingFields = [];
+          if (!taskId) missingFields.push('task_id');
+          if (dynamicEventSeq === undefined || dynamicEventSeq === null) missingFields.push('dynamic_event_seq');
+          
           msg.payload = { 
             status: 'failed', 
-            reason: 'No task_id or dynamic_event_seq found. Connect this node after start-task node.' 
+            reason: `Missing required RMF task context: ${missingFields.join(', ')}. This node should be connected after a start-task node.`,
+            missing_fields: missingFields,
+            diagnostics: diagnostics,
+            help: 'Connect this goto-place node after a start-task node, or ensure the input message contains rmf_task_id and rmf_dynamic_event_seq properties.'
           };
           send([null, msg, null]); // Send to failed output
           return done();
@@ -421,8 +443,8 @@ module.exports = function (RED) {
             msg.payload = { 
               status: 'aborted', 
               reason: `Robot is busy with existing dynamic event. New request aborted due to parallel behavior: ${parallelBehaviour}`,
-              robot_name: robotName,
-              robot_fleet: robotFleet,
+              rmf_robot_name: robotName,
+              rmf_robot_fleet: robotFleet,
               location_name: locationName
             };
             
@@ -560,10 +582,11 @@ module.exports = function (RED) {
             msg.payload = {
               status: goalResponse.status,
               success: goalResponse.success,
-              robot_name: robotName,
-              robot_fleet: robotFleet,
+              rmf_robot_name: robotName,
+              rmf_robot_fleet: robotFleet,
               location_name: locationName,
-              task_id: taskId,
+              rmf_task_id: taskId,
+              rmf_dynamic_event_seq: dynamicEventSeq,
               timestamp: goalResponse.timestamp || new Date().toISOString()
             };
             
@@ -571,7 +594,7 @@ module.exports = function (RED) {
             msg.rmf_task_id = taskId;
             msg.rmf_robot_name = robotName;
             msg.rmf_robot_fleet = robotFleet;
-            // Note: dynamic_event_seq now retrieved directly from RMF context by each node
+            msg.rmf_dynamic_event_seq = dynamicEventSeq;
             
             // Send to appropriate output
             if (goalResponse.success && goalResponse.status === 'completed') {
@@ -601,9 +624,10 @@ module.exports = function (RED) {
             const statusMsg = { ...msg };
             statusMsg.payload = {
               status: feedbackData.status,
-              robot_name: robotName,
-              robot_fleet: robotFleet,
+              rmf_robot_name: robotName,
+              rmf_robot_fleet: robotFleet,
               location_name: locationName,
+              rmf_dynamic_event_seq: dynamicEventSeq,
               timestamp: feedbackData.timestamp
             };
             
@@ -611,6 +635,7 @@ module.exports = function (RED) {
             statusMsg.rmf_task_id = taskId;
             statusMsg.rmf_robot_name = robotName;
             statusMsg.rmf_robot_fleet = robotFleet;
+            statusMsg.rmf_dynamic_event_seq = dynamicEventSeq;
             
             send([null, null, statusMsg]);
           }
@@ -643,9 +668,10 @@ module.exports = function (RED) {
           const statusMsg = { ...msg };
           statusMsg.payload = {
             status: 'underway',
-            robot_name: robotName,
-            robot_fleet: robotFleet,
+            rmf_robot_name: robotName,
+            rmf_robot_fleet: robotFleet,
             location_name: locationName,
+            rmf_dynamic_event_seq: dynamicEventSeq,
             timestamp: new Date().toISOString()
           };
           send([null, null, statusMsg]); // Send to status output

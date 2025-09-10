@@ -146,10 +146,12 @@ module.exports = function (RED) {
 
         // Validate robot context has required fields for end event
         if (!robotContext.dynamic_event_seq) {
-          setStatus('red', 'ring', 'No active task');
+          setStatus('red', 'ring', 'No active dynamic event');
           msg.payload = { 
             status: 'failed', 
-            reason: `Robot ${robotName} has no active dynamic event sequence. Ensure the robot has an active task from start-task/goto-place nodes.` 
+            reason: `Robot ${robotName} (${robotFleet}) has no active dynamic event sequence. Current robot context: ${JSON.stringify(robotContext, null, 2)}`,
+            robot_context: robotContext,
+            help: 'Ensure the robot has an active task from start-task/goto-place nodes before calling end-task.'
           };
           send(msg);
           return done();
@@ -174,12 +176,18 @@ module.exports = function (RED) {
             msg.payload = {
               status: 'completed',
               action: 'end',
-              robot_name: robotName,
-              robot_fleet: robotFleet,
-              task_id: taskId,
-              dynamic_event_seq: robotContext.dynamic_event_seq,
+              rmf_robot_name: robotName,
+              rmf_robot_fleet: robotFleet,
+              rmf_task_id: taskId,
+              rmf_dynamic_event_seq: robotContext.dynamic_event_seq,
               timestamp: new Date().toISOString()
             };
+            
+            // Set RMF metadata for potential next node
+            msg.rmf_task_id = taskId;
+            msg.rmf_robot_name = robotName;
+            msg.rmf_robot_fleet = robotFleet;
+            msg.rmf_dynamic_event_seq = robotContext.dynamic_event_seq;
             
             send(msg);
             
