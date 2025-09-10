@@ -652,15 +652,25 @@ async function sendDynamicEventGoal(goalData, callbacks = {}) {
     }
 
     // Construct description and category
-    let description = goalData.description || JSON.stringify({ waypoint: goalData.location_name });
+    let description = goalData.description;
     let category = goalData.category || 'go_to_place';
     
     // If zone data is detected, update category
-    if (goalData.zone_type && goalData.zone_type !== '') {
+    const hasZoneTypes = (goalData.zone_types && goalData.zone_types.length > 0) || 
+                        (goalData.zone_type && goalData.zone_type !== '' && goalData.zone_type !== 'all');
+    
+    if (hasZoneTypes || goalData.location_type === 'zone') {
       category = 'zone';
       console.log(`RMF: Zone dynamic event detected for: ${goalData.location_name}`);
     } else {
       console.log(`RMF: Standard dynamic event for waypoint: ${goalData.location_name}`);
+    }
+    
+    // Ensure description is always stringified JSON for RMF action goal
+    if (typeof description === 'object') {
+      description = JSON.stringify(description);
+    } else if (!description) {
+      description = JSON.stringify({ waypoint: goalData.location_name });
     }
     
     const goal = {

@@ -11,7 +11,9 @@ module.exports = function (RED) {
     node.robot_fleet = config.robot_fleet;
     node.location_name = config.location_name;
     node.zone_type = config.zone_type;
-    node.zone_preferred_waypoint = config.zone_preferred_waypoint;
+    node.zone_preferred_waypoints = config.zone_preferred_waypoints;
+    node.zone_preferred_waypoint = config.zone_preferred_waypoint; // Legacy support
+    node.zone_final_facing = config.zone_final_facing;
     node.stubborn_period = config.stubborn_period;
     node.parallel_behaviour = config.parallel_behaviour;
 
@@ -112,9 +114,34 @@ module.exports = function (RED) {
         function getMeaningfulValue(...values) {
           for (const value of values) {
             if (value && value !== '' && value !== 'all' && value !== 'auto') {
-              return value;
+              // Handle array values (new multi-select format)
+              if (Array.isArray(value)) {
+                // Filter out 'all' values from array
+                const filteredValues = value.filter(v => v !== 'all' && v !== 'auto' && v !== '');
+                if (filteredValues.length > 0) {
+                  return filteredValues;
+                }
+              } else {
+                return value;
+              }
             }
           }
+          return undefined;
+        }
+        
+        // Helper function to extract zone types from array or string
+        function extractZoneTypes(zoneTypeValue) {
+          if (!zoneTypeValue) return undefined;
+          
+          if (Array.isArray(zoneTypeValue)) {
+            // New multi-select format - filter out 'all'
+            const filteredTypes = zoneTypeValue.filter(type => type !== 'all' && type !== '');
+            return filteredTypes.length > 0 ? filteredTypes : undefined;
+          } else if (typeof zoneTypeValue === 'string' && zoneTypeValue !== 'all' && zoneTypeValue !== '') {
+            // Legacy single string format
+            return [zoneTypeValue];
+          }
+          
           return undefined;
         }
         
@@ -123,18 +150,39 @@ module.exports = function (RED) {
         const robotFleet = msg.rmf_robot_fleet || (msg.payload && msg.payload.robot_fleet) || msg.robot_fleet || node.robot_fleet;
         const locationName = node.location_name || msg.location_name;
         
-        // Zone parameters - only use if explicitly specified (not empty/undefined)
-        const zoneType = getMeaningfulValue(msg.zone_type, (msg.payload && msg.payload.zone_type), node.zone_type);
-        const zonePreferredWaypoint = getMeaningfulValue(msg.zone_preferred_waypoint, (msg.payload && msg.payload.zone_preferred_waypoint), node.zone_preferred_waypoint);
+        // Zone parameters - handle both array (new format) and string (legacy format)
+        console.log(`[GOTO-PLACE] Raw zone inputs:`, {
+          msgZoneType: msg.zone_type,
+          msgPayloadZoneType: msg.payload && msg.payload.zone_type,
+          nodeZoneType: node.zone_type,
+          msgZonePreferredWaypoints: msg.zone_preferred_waypoints,
+          msgPayloadZonePreferredWaypoints: msg.payload && msg.payload.zone_preferred_waypoints,
+          nodeZonePreferredWaypoints: node.zone_preferred_waypoints,
+          msgZonePreferredWaypoint: msg.zone_preferred_waypoint,
+          msgPayloadZonePreferredWaypoint: msg.payload && msg.payload.zone_preferred_waypoint,
+          nodeZonePreferredWaypoint: node.zone_preferred_waypoint,
+          nodeKeys: Object.keys(node)
+        });
+        
+        const zoneTypes = extractZoneTypes(msg.zone_type || (msg.payload && msg.payload.zone_type) || node.zone_type);
+        const zonePreferredWaypoints = msg.zone_preferred_waypoints || (msg.payload && msg.payload.zone_preferred_waypoints) || node.zone_preferred_waypoints;
+        const zoneFinalFacing = getMeaningfulValue(msg.zone_final_facing, (msg.payload && msg.payload.zone_final_facing), node.zone_final_facing);
+        
+        // Legacy support for single waypoint
+        const legacyZonePreferredWaypoint = getMeaningfulValue(msg.zone_preferred_waypoint, (msg.payload && msg.payload.zone_preferred_waypoint), node.zone_preferred_waypoint);
         
         // Debug logging for zone inputs
         console.log(`[GOTO-PLACE] Zone input processing:`, {
           nodeZoneType: node.zone_type,
           msgZoneType: msg.zone_type,
-          resolvedZoneType: zoneType,
-          nodeZonePreferredWaypoint: node.zone_preferred_waypoint,
-          msgZonePreferredWaypoint: msg.zone_preferred_waypoint,
-          resolvedZonePreferredWaypoint: zonePreferredWaypoint
+          resolvedZoneTypes: zoneTypes,
+          nodeZonePreferredWaypoints: node.zone_preferred_waypoints,
+          msgZonePreferredWaypoints: msg.zone_preferred_waypoints,
+          resolvedZonePreferredWaypoints: zonePreferredWaypoints,
+          nodeZoneFinalFacing: node.zone_final_facing,
+          msgZoneFinalFacing: msg.zone_final_facing,
+          resolvedZoneFinalFacing: zoneFinalFacing,
+          legacyZonePreferredWaypoint: legacyZonePreferredWaypoint
         });
         const stubbornPeriod = node.stubborn_period !== undefined ? node.stubborn_period : 
                                (msg.stubborn_period !== undefined ? msg.stubborn_period : 0);
@@ -313,8 +361,8 @@ module.exports = function (RED) {
           // We don't fail here, just ignore the zone inputs for waypoints
         }
 
-        // 7) Validate zone_type is available for the zone (skip if 'all')
-        if (zoneType && zoneType !== 'all' && validatedZone) {
+        // 7) Validate zone_types are available for the zone (skip if empty or contains 'all')
+        if (zoneTypes && zoneTypes.length > 0 && validatedZone) {
           // Helper function to get zone vertices (same logic as form)
           function getZoneVertices(zone) {
             return zone.vertices || zone.zone_vertices || [];
@@ -347,7 +395,7 @@ module.exports = function (RED) {
           const uniquePlacementTypes = [...new Set(placementBasedTypes)];
           
           // Add special zone types that are not placement-based
-          const specialZoneTypes = ['patient_facing'];
+          const specialZoneTypes = ['human_facing'];
           
           // Combine placement-based types with special types, avoiding duplicates
           const allAvailableTypes = [...uniquePlacementTypes];
@@ -357,8 +405,8 @@ module.exports = function (RED) {
             }
           });
           
-          console.log(`[GOTO-PLACE] Zone type validation for zone "${locationName}":`, {
-            requestedZoneType: zoneType,
+          console.log(`[GOTO-PLACE] Zone types validation for zone "${locationName}":`, {
+            requestedZoneTypes: zoneTypes,
             placementBasedTypes: uniquePlacementTypes,
             specialZoneTypes: specialZoneTypes,
             allAvailableTypes: allAvailableTypes,
@@ -368,54 +416,87 @@ module.exports = function (RED) {
           
           if (allAvailableTypes.length === 0) {
             console.log(`[GOTO-PLACE] Warning: No zone types found for zone "${locationName}", skipping zone type validation`);
-          } else if (!allAvailableTypes.includes(zoneType)) {
-            setStatus('red', 'ring', 'Invalid zone type');
-            msg.payload = { 
-              status: 'failed', 
-              reason: `Zone type "${zoneType}" not available for zone "${locationName}". Available types: [${allAvailableTypes.join(', ')}]` 
-            };
-            send([null, msg, null]);
-            return done();
           } else {
-            console.log(`[GOTO-PLACE] Zone type "${zoneType}" is valid for zone "${locationName}"`);
+            // Check if all requested zone types are valid
+            const invalidTypes = zoneTypes.filter(type => !allAvailableTypes.includes(type));
+            if (invalidTypes.length > 0) {
+              setStatus('red', 'ring', 'Invalid zone types');
+              msg.payload = { 
+                status: 'failed', 
+                reason: `Zone types [${invalidTypes.join(', ')}] not available for zone "${locationName}". Available types: [${allAvailableTypes.join(', ')}]` 
+              };
+              send([null, msg, null]);
+              return done();
+            } else {
+              console.log(`[GOTO-PLACE] Zone types [${zoneTypes.join(', ')}] are valid for zone "${locationName}"`);
+            }
           }
         }
 
-        // 8) Validate zone_preferred_waypoint is available for the zone (skip if 'auto' or empty)
-        if (zonePreferredWaypoint && zonePreferredWaypoint !== 'auto' && zonePreferredWaypoint !== '' && validatedZone) {
-          // Helper function to get zone vertices (same logic as form)
-          function getZoneVertices(zone) {
-            return zone.vertices || zone.zone_vertices || [];
+        // 8) Validate zone_preferred_waypoints are available for the zone
+        if (validatedZone) {
+          let waypointsToValidate = [];
+          
+          // Handle new multi-waypoint format
+          if (zonePreferredWaypoints && Array.isArray(zonePreferredWaypoints)) {
+            waypointsToValidate = zonePreferredWaypoints.map(wp => 
+              typeof wp === 'string' ? wp : wp.waypoint
+            ).filter(wp => wp && wp !== 'auto' && wp !== '');
+          }
+          // Handle legacy single waypoint format
+          else if (legacyZonePreferredWaypoint) {
+            waypointsToValidate = [legacyZonePreferredWaypoint];
           }
           
-          // Get all internal waypoints for the zone
-          const allInternalWaypoints = [];
-          const zoneVertices = getZoneVertices(validatedZone);
-          
-          zoneVertices.forEach(vertex => {
-            if (vertex && vertex.waypoints) {
-              allInternalWaypoints.push(...vertex.waypoints);
+          if (waypointsToValidate.length > 0) {
+            // Helper function to get zone vertices (same logic as form)
+            function getZoneVertices(zone) {
+              return zone.vertices || zone.zone_vertices || [];
             }
-            // Also check if vertex has a name directly (it might be a waypoint itself)
-            if (vertex && vertex.name && typeof vertex.name === 'string') {
-              allInternalWaypoints.push(vertex.name);
+            
+            // Get all internal waypoints for the zone
+            const allInternalWaypoints = [];
+            const zoneVertices = getZoneVertices(validatedZone);
+            
+            zoneVertices.forEach((vertex, index) => {
+              if (vertex && vertex.waypoints) {
+                allInternalWaypoints.push(...vertex.waypoints);
+              }
+              // Also check if vertex has a name directly (it might be a waypoint itself)
+              if (vertex && vertex.name && typeof vertex.name === 'string') {
+                allInternalWaypoints.push(vertex.name);
+              }
+              // Handle different vertex structures from the zone
+              if (typeof vertex === 'string') {
+                allInternalWaypoints.push(vertex);
+              } else if (typeof vertex === 'number') {
+                // Index-based vertex - need to look up in navGraphs
+                const graph = rmfData.navGraphs ? rmfData.navGraphs.find(g => 
+                  g.name === validatedZone.graph || g.vertices.length > vertex
+                ) : null;
+                if (graph && graph.vertices[vertex]) {
+                  allInternalWaypoints.push(graph.vertices[vertex].name || `vertex_${vertex}`);
+                }
+              }
+            });
+            
+            console.log(`[GOTO-PLACE] Zone waypoints validation for zone "${locationName}":`, {
+              requestedWaypoints: waypointsToValidate,
+              allInternalWaypoints: allInternalWaypoints,
+              zoneVertices: zoneVertices
+            });
+            
+            // Validate each waypoint
+            const invalidWaypoints = waypointsToValidate.filter(wp => !allInternalWaypoints.includes(wp));
+            if (invalidWaypoints.length > 0) {
+              setStatus('red', 'ring', 'Invalid zone waypoints');
+              msg.payload = { 
+                status: 'failed', 
+                reason: `Zone preferred waypoints [${invalidWaypoints.join(', ')}] not available for zone "${locationName}". Available waypoints: [${allInternalWaypoints.join(', ')}]` 
+              };
+              send([null, msg, null]);
+              return done();
             }
-          });
-          
-          console.log(`[GOTO-PLACE] Zone waypoint validation for zone "${locationName}":`, {
-            requestedWaypoint: zonePreferredWaypoint,
-            allInternalWaypoints: allInternalWaypoints,
-            zoneVertices: zoneVertices
-          });
-          
-          if (!allInternalWaypoints.includes(zonePreferredWaypoint)) {
-            setStatus('red', 'ring', 'Invalid zone waypoint');
-            msg.payload = { 
-              status: 'failed', 
-              reason: `Zone preferred waypoint "${zonePreferredWaypoint}" not available for zone "${locationName}". Available waypoints: [${allInternalWaypoints.join(', ')}]` 
-            };
-            send([null, msg, null]);
-            return done();
           }
         }
         
@@ -522,8 +603,21 @@ module.exports = function (RED) {
 
         // Only add zone-related fields if this is actually a zone location
         if (isZoneLocation) {
-          dynamicEventData.zone_type = zoneType;
-          dynamicEventData.zone_preferred_waypoint = zonePreferredWaypoint;
+          // Store zone data in new format for internal use
+          dynamicEventData.zone_types = zoneTypes;
+          dynamicEventData.zone_preferred_waypoints = zonePreferredWaypoints;
+          
+          // Legacy support - also set old fields if single values
+          if (zoneTypes && zoneTypes.length > 0) {
+            // For rmfTaskManager compatibility, also set zone_type field
+            dynamicEventData.zone_type = zoneTypes.length === 1 ? zoneTypes[0] : zoneTypes;
+          }
+          if (legacyZonePreferredWaypoint) {
+            dynamicEventData.zone_preferred_waypoint = legacyZonePreferredWaypoint;
+          }
+          
+          // Set location_type to help rmfTaskManager identify this as zone
+          dynamicEventData.location_type = 'zone';
         }
 
         // Create appropriate description payload based on location type
@@ -534,33 +628,58 @@ module.exports = function (RED) {
           };
 
           console.log(`[GOTO-PLACE] Creating zone description for zone "${locationName}":`, {
-            zoneType: zoneType,
-            zoneTypeValid: zoneType && zoneType !== 'all',
-            zonePreferredWaypoint: zonePreferredWaypoint,
-            zonePreferredWaypointValid: !!zonePreferredWaypoint
+            zoneTypes: zoneTypes,
+            zoneTypesValid: zoneTypes && zoneTypes.length > 0,
+            zonePreferredWaypoints: zonePreferredWaypoints,
+            zonePreferredWaypointsValid: zonePreferredWaypoints && zonePreferredWaypoints.length > 0,
+            legacyZonePreferredWaypoint: legacyZonePreferredWaypoint,
+            zoneFinalFacing: zoneFinalFacing,
+            zoneFinalFacingValid: zoneFinalFacing !== undefined && zoneFinalFacing !== null && zoneFinalFacing !== ''
           });
 
-          // Add zone types if specified (and not 'all' which means no specific zone type)
-          if (zoneType && zoneType !== 'all') {
-            zoneDescription.types = [zoneType];
-            console.log(`[GOTO-PLACE] Added zone type "${zoneType}" to description`);
+          // Add zone types if specified (new multi-select format)
+          if (zoneTypes && zoneTypes.length > 0) {
+            zoneDescription.types = zoneTypes;
+            console.log(`[GOTO-PLACE] Added zone types [${zoneTypes.join(', ')}] to description`);
           }
 
-          // Add preferred waypoint if specified
-          if (zonePreferredWaypoint) {
+          // Add preferred waypoints if specified (new multi-waypoint format)
+          if (zonePreferredWaypoints && Array.isArray(zonePreferredWaypoints) && zonePreferredWaypoints.length > 0) {
+            zoneDescription.places = zonePreferredWaypoints.map(wp => {
+              if (typeof wp === 'string') {
+                return { waypoint: wp };
+              } else if (wp.waypoint) {
+                const place = { waypoint: wp.waypoint };
+                if (wp.orientation !== undefined) {
+                  place.orientation = wp.orientation;
+                }
+                return place;
+              }
+              return { waypoint: wp };
+            });
+            console.log(`[GOTO-PLACE] Added preferred waypoints to description:`, zoneDescription.places);
+          }
+          // Legacy support for single waypoint
+          else if (legacyZonePreferredWaypoint) {
             zoneDescription.places = [{
-              waypoint: zonePreferredWaypoint
+              waypoint: legacyZonePreferredWaypoint
             }];
-            console.log(`[GOTO-PLACE] Added preferred waypoint "${zonePreferredWaypoint}" to description`);
+            console.log(`[GOTO-PLACE] Added legacy preferred waypoint "${legacyZonePreferredWaypoint}" to description`);
+          }
+
+          // Add final facing if specified
+          if (zoneFinalFacing !== undefined && zoneFinalFacing !== null && zoneFinalFacing !== '') {
+            zoneDescription.final_facing = parseFloat(zoneFinalFacing);
+            console.log(`[GOTO-PLACE] Added final facing ${zoneDescription.final_facing} radians to description`);
           }
 
           console.log(`[GOTO-PLACE] Final zone description:`, zoneDescription);
 
-          // Set the zone description
-          dynamicEventData.description = JSON.stringify(zoneDescription);
+          // Set the zone description as object (will be stringified by rmfTaskManager)
+          dynamicEventData.description = zoneDescription;
         } else {
           // Regular waypoint description (existing behavior)
-          dynamicEventData.description = JSON.stringify({ waypoint: locationName });
+          dynamicEventData.description = { waypoint: locationName };
         }
 
         // Set up callbacks for goal completion and feedback

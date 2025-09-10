@@ -1,3 +1,12 @@
+<style>
+.waypoint-placeholder {
+  background: #ffeb3b !important;
+  border: 2px dashed #ff9800 !important;
+  height: 30px !important;
+  margin: 2px 0 !important;
+}
+</style>
+
 <script type="text/javascript">
   RED.nodes.registerType('goto-place', {
     category: 'RMF Dynamic Event Task',
@@ -8,8 +17,9 @@
       robot_name: { value: '' },
       robot_fleet: { value: '' },
       location_name: { value: '' },
-      zone_type: { value: 'all' },
-      zone_preferred_waypoint: { value: '' },
+      zone_type: { value: ['all'] },
+      zone_preferred_waypoints: { value: [] },
+      zone_final_facing: { value: '' },
       stubborn_period: { value: 0 },
       parallel_behaviour: { value: 'abort' }
     },
@@ -37,7 +47,7 @@
         'right': 'Right',
         'top': 'Top',
         'bottom': 'Bottom',
-        'patient_facing': 'Patient Facing'
+        'human_facing': 'Human Facing'
       };
       
       // Mapping from waypoint placement to zone type
@@ -329,18 +339,20 @@
         const isZone = selectedOption.data('is-zone') === true;
         
         const zoneTypeRow = $('#node-input-zone_type').closest('.form-row');
-        const zoneWaypointRow = $('#node-input-zone_preferred_waypoint').closest('.form-row');
+        const zoneWaypointsRow = $('#zone-preferred-waypoints-container').closest('.form-row');
         
         if (isZone && locationName) {
           zoneTypeRow.show();
-          zoneWaypointRow.show();
+          zoneWaypointsRow.show();
           populateZoneTypeDropdown(locationName);
-          populateZoneWaypointDropdown(locationName);
+          populateZoneWaypointsInterface(locationName);
         } else {
           zoneTypeRow.hide();
-          zoneWaypointRow.hide();
-          $('#node-input-zone_type').val('all');
-          $('#node-input-zone_preferred_waypoint').val('');
+          zoneWaypointsRow.hide();
+          $('#node-input-zone_type').val(['all']);
+          // Clear waypoints interface
+          $('.available-waypoints').empty();
+          $('.selected-waypoints').empty();
         }
       }
       
@@ -372,7 +384,7 @@
           const uniquePlacementTypes = [...new Set(placementBasedTypes)];
           
           // Add special zone types that are not placement-based
-          const specialZoneTypes = ['patient_facing'];
+          const specialZoneTypes = ['human_facing'];
           
           // Combine placement-based types with special types, avoiding duplicates
           const allAvailableTypes = [...uniquePlacementTypes];
@@ -383,7 +395,7 @@
           });
           
           // Always add "All" option first
-          select.append('<option value="all">All</option>');
+          select.append('<option value="all" selected>All</option>');
           
           // Add placement and special options
           allAvailableTypes.forEach(zoneType => {
@@ -399,24 +411,65 @@
           }
         } else {
           // Fallback zone types when no zone data available
-          select.append('<option value="all">All</option>');
+          select.append('<option value="all" selected>All</option>');
           select.append('<option value="center">Center</option>');
           select.append('<option value="left">Left</option>');
           select.append('<option value="right">Right</option>');
           select.append('<option value="top">Top</option>');
           select.append('<option value="bottom">Bottom</option>');
-          select.append('<option value="patient_facing">Patient Facing</option>');
+          select.append('<option value="human_facing">Human Facing</option>');
         }
         
+        // Handle zone types selection logic with mutual exclusivity
+        let previousSelection = ['all']; // Track previous selection
+        
+        select.off('change').on('change', function() {
+          const selectedValues = $(this).val() || [];
+          const allSelected = selectedValues.includes('all');
+          const othersSelected = selectedValues.filter(v => v !== 'all');
+          
+          if (allSelected && othersSelected.length > 0) {
+            // Both 'all' and others are selected, determine which was added
+            const wasAllPreviouslySelected = previousSelection.includes('all');
+            
+            if (!wasAllPreviouslySelected) {
+              // 'all' was just selected, unselect all others
+              $(this).val(['all']);
+              previousSelection = ['all'];
+            } else {
+              // Another option was just selected, unselect 'all'
+              $(this).val(othersSelected);
+              previousSelection = othersSelected;
+            }
+          } else if (selectedValues.length === 0) {
+            // If nothing is selected, default to 'all'
+            $(this).val(['all']);
+            previousSelection = ['all'];
+          } else {
+            // Valid selection, update previous
+            previousSelection = selectedValues.slice();
+          }
+        });
+        
         // Restore previous value
-        select.val(currentValue || node.zone_type || 'all');
+        if (Array.isArray(currentValue)) {
+          select.val(currentValue);
+          previousSelection = currentValue.slice();
+        } else if (currentValue) {
+          select.val([currentValue]);
+          previousSelection = [currentValue];
+        } else {
+          select.val(Array.isArray(node.zone_type) ? node.zone_type : [node.zone_type || 'all']);
+          previousSelection = Array.isArray(node.zone_type) ? node.zone_type.slice() : [node.zone_type || 'all'];
+        }
       }
       
-      function populateZoneWaypointDropdown(zoneName) {
-        const select = $('#node-input-zone_preferred_waypoint');
-        const currentValue = select.val();
+      function populateZoneWaypointsInterface(zoneName) {
+        const availableContainer = $('.available-waypoints');
+        const selectedContainer = $('.selected-waypoints');
         
-        select.empty().append('<option value="">None</option>');
+        availableContainer.empty();
+        selectedContainer.empty();
         
         // Find the zone data
         const zone = node.rmfData.zones ? node.rmfData.zones.find(z => z.name === zoneName) : null;
@@ -437,8 +490,6 @@
                 vertexName = vertex.name;
                 vertexValue = vertex.name;
                 displayName = vertexName;
-                
-                // Don't add placement info - just use the vertex name
               } else if (typeof vertex === 'number') {
                 // Vertex index - find corresponding vertex name from navGraphs
                 const graph = node.rmfData.navGraphs ? node.rmfData.navGraphs.find(g => 
@@ -461,13 +512,175 @@
                 displayName = vertexName;
               }
               
-              select.append(`<option value="${vertexValue}">${displayName}</option>`);
+              // Create available waypoint item
+              const availableItem = $(`
+                <div class="available-waypoint-item" data-waypoint="${vertexValue}" style="
+                  padding: 5px; 
+                  margin: 2px 0; 
+                  background: white; 
+                  border: 1px solid #ddd; 
+                  cursor: pointer;
+                  border-radius: 3px;
+                  font-size: 11px;
+                ">
+                  <span style="color: #333;">${displayName}</span>
+                </div>
+              `);
+              
+              availableContainer.append(availableItem);
+              
+              // Handle click to add to selected
+              availableItem.on('click', function() {
+                const waypointValue = $(this).data('waypoint');
+                addToSelectedWaypoints(waypointValue, displayName, selectedContainer, availableContainer);
+              });
             });
+            
+            // Make selected waypoints sortable (fallback if jQuery UI not available)
+            try {
+              selectedContainer.sortable({
+                items: '.selected-waypoint-item',
+                placeholder: 'waypoint-placeholder',
+                tolerance: 'pointer',
+                cursor: 'move'
+              });
+            } catch (e) {
+              console.log('jQuery UI sortable not available, using basic ordering');
+            }
           }
         }
         
-        // Restore previous value
-        select.val(currentValue || node.zone_preferred_waypoint || '');
+        // Restore saved waypoints
+        if (node.zone_preferred_waypoints && Array.isArray(node.zone_preferred_waypoints)) {
+          setTimeout(() => {
+            node.zone_preferred_waypoints.forEach(waypointData => {
+              let waypointName, orientation;
+              
+              if (typeof waypointData === 'string') {
+                waypointName = waypointData;
+                orientation = undefined;
+              } else if (waypointData.waypoint) {
+                waypointName = waypointData.waypoint;
+                orientation = waypointData.orientation;
+              }
+              
+              if (waypointName) {
+                const availableItem = availableContainer.find(`[data-waypoint="${waypointName}"]`);
+                
+                if (availableItem.length > 0) {
+                  // Find the display name from available item
+                  const displayName = availableItem.find('span').text();
+                  
+                  // Add to selected
+                  addToSelectedWaypoints(waypointName, displayName, selectedContainer, availableContainer);
+                  
+                  // Set orientation if provided
+                  if (orientation !== undefined) {
+                    const selectedItem = selectedContainer.find(`[data-waypoint="${waypointName}"]`);
+                    selectedItem.find('.waypoint-orientation').val(orientation);
+                  }
+                }
+              }
+            });
+          }, 50);
+        }
+        
+        // Function to add waypoint to selected list
+        function addToSelectedWaypoints(waypointValue, displayName, selectedContainer, availableContainer) {
+          // Check if already selected
+          if (selectedContainer.find(`[data-waypoint="${waypointValue}"]`).length > 0) {
+            return;
+          }
+          
+          const selectedItem = $(`
+            <div class="selected-waypoint-item" data-waypoint="${waypointValue}" style="
+              padding: 5px; 
+              margin: 2px 0; 
+              background: #e3f2fd; 
+              border: 1px solid #1976d2; 
+              border-radius: 3px;
+              font-size: 11px;
+              cursor: move;
+              display: flex;
+              align-items: center;
+              gap: 5px;
+            ">
+              <span class="drag-handle" style="cursor: ns-resize; color: #666; font-weight: bold;">⋮⋮</span>
+              <span style="flex: 1; color: #1565c0;">${displayName}</span>
+              <input type="number" class="waypoint-orientation" step="0.01" placeholder="orient." style="width: 50px; font-size: 10px;" title="Orientation in radians">
+              <button type="button" class="move-up" style="
+                background: #4caf50; 
+                color: white; 
+                border: none; 
+                border-radius: 2px; 
+                width: 16px; 
+                height: 16px; 
+                font-size: 10px; 
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+              " title="Move up">↑</button>
+              <button type="button" class="move-down" style="
+                background: #ff9800; 
+                color: white; 
+                border: none; 
+                border-radius: 2px; 
+                width: 16px; 
+                height: 16px; 
+                font-size: 10px; 
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+              " title="Move down">↓</button>
+              <button type="button" class="remove-waypoint" style="
+                background: #d32f2f; 
+                color: white; 
+                border: none; 
+                border-radius: 2px; 
+                width: 16px; 
+                height: 16px; 
+                font-size: 10px; 
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+              " title="Remove waypoint">×</button>
+            </div>
+          `);
+          
+          selectedContainer.append(selectedItem);
+          
+          // Hide from available list
+          availableContainer.find(`[data-waypoint="${waypointValue}"]`).hide();
+          
+          // Handle move up button
+          selectedItem.find('.move-up').on('click', function(e) {
+            e.stopPropagation();
+            const prev = selectedItem.prev('.selected-waypoint-item');
+            if (prev.length > 0) {
+              selectedItem.insertBefore(prev);
+            }
+          });
+          
+          // Handle move down button
+          selectedItem.find('.move-down').on('click', function(e) {
+            e.stopPropagation();
+            const next = selectedItem.next('.selected-waypoint-item');
+            if (next.length > 0) {
+              selectedItem.insertAfter(next);
+            }
+          });
+          
+          // Handle remove button
+          selectedItem.find('.remove-waypoint').on('click', function(e) {
+            e.stopPropagation();
+            selectedItem.remove();
+            // Show back in available list
+            availableContainer.find(`[data-waypoint="${waypointValue}"]`).show();
+          });
+        }
       }
       
       // Helper functions
@@ -544,6 +757,35 @@
         return false;
       }
       
+      // Collect zone waypoints data
+      const selectedWaypoints = [];
+      $('.selected-waypoint-item').each(function() {
+        const waypointName = $(this).data('waypoint');
+        const orientationInput = $(this).find('.waypoint-orientation');
+        const orientation = orientationInput.val();
+        
+        if (orientation && orientation.trim()) {
+          // Create waypoint object with orientation
+          selectedWaypoints.push({
+            waypoint: waypointName,
+            orientation: parseFloat(orientation)
+          });
+        } else {
+          // Create waypoint object without orientation
+          selectedWaypoints.push({ waypoint: waypointName });
+        }
+      });
+      
+      // Save the waypoints data
+      this.zone_preferred_waypoints = selectedWaypoints;
+      
+      // Save the zone types data (from multi-select)
+      const selectedZoneTypes = $('#node-input-zone_type').val();
+      this.zone_type = selectedZoneTypes || ['all'];
+      
+      // Save the zone final facing
+      this.zone_final_facing = $('#node-input-zone_final_facing').val();
+      
       return true;
     }
   });
@@ -584,23 +826,48 @@
   </div>
   
   <div class="form-row">
-    <label for="node-input-zone_type">Zone Type </label>
-    <select id="node-input-zone_type" style="width: 100%;">
-      <option value="all">All</option>
+    <label for="node-input-zone_type">Zone Types</label>
+    <select id="node-input-zone_type" multiple style="width: 100%; height: 80px;">
+      <option value="all" selected>All</option>
       <option value="left">Left</option>
       <option value="right">Right</option>
       <option value="center">Center</option>
       <option value="top">Top</option>
       <option value="bottom">Bottom</option>
-      <option value="patient_facing">Patient Facing</option>
+      <option value="human_facing">Human Facing</option>
     </select>
+    <div class="form-tips">Hold Ctrl/Cmd to select multiple zone entry types. 'All' is mutually exclusive with other selections.</div>
   </div>
   
   <div class="form-row">
-    <label for="node-input-zone_preferred_waypoint">Zone Preferred Waypoint</label>
-    <select id="node-input-zone_preferred_waypoint" style="width: 100%;">
-      <option value="">None</option>
-    </select>
+    <label>Zone Preferred Waypoints</label>
+    <div id="zone-preferred-waypoints-container" style="border: 1px solid #ddd; padding: 10px; max-height: 300px; overflow-y: auto;">
+      <div class="form-tips" style="margin-bottom: 10px;">Select waypoints from available list. Drag selected waypoints to reorder priority (top = highest priority).</div>
+      
+      <div style="display: flex; gap: 10px;">
+        <!-- Available waypoints -->
+        <div style="flex: 1;">
+          <h4 style="margin: 0 0 5px 0; font-size: 12px; color: #666;">Available Waypoints</h4>
+          <div class="available-waypoints" style="border: 1px solid #eee; padding: 5px; min-height: 100px; max-height: 150px; overflow-y: auto; background: #fafafa;">
+            <!-- Available waypoints will be populated here -->
+          </div>
+        </div>
+        
+        <!-- Selected waypoints (ordered) -->
+        <div style="flex: 1;">
+          <h4 style="margin: 0 0 5px 0; font-size: 12px; color: #666;">Selected Waypoints (Priority Order)</h4>
+          <div class="selected-waypoints" style="border: 1px solid #eee; padding: 5px; min-height: 100px; max-height: 150px; overflow-y: auto; background: #f0f8ff;">
+            <!-- Selected waypoints will be shown here in order -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-zone_final_facing">Zone Final Facing (radians)</label>
+    <input type="number" id="node-input-zone_final_facing" min="-6.28" max="6.28" step="0.01" style="width: 100%;" placeholder="Optional: Final facing angle in radians">
+    <div class="form-tips">Set the final facing direction (in radians) when the robot reaches the zone. Leave empty to use default facing.</div>
   </div>
   
   <div class="form-row">
@@ -635,11 +902,11 @@
     <dt>Location Name</dt>
     <dd>The destination location or zone name. Locations from nav graphs and zones are shown. Use "Use msg.location_name" to pass via message.</dd>
     
-    <dt>Zone Type</dt>
-    <dd>For zone locations, specifies the placement within the zone (All, Left, Right, Center, Top, Bottom, Patient Facing, etc.). Only visible when a zone is selected.</dd>
+    <dt>Zone Types</dt>
+    <dd>For zone locations, specifies the placements within the zone (All, Left, Right, Center, Top, Bottom, Human Facing, etc.). Multi-select with 'All' being mutually exclusive with other options. Only visible when a zone is selected.</dd>
     
-    <dt>Zone Preferred Waypoint</dt>
-    <dd>For zone locations, allows selection of a specific waypoint within the zone. Only visible when a zone is selected. Use "None" to let the system choose based on zone type.</dd>
+    <dt>Zone Preferred Waypoints</dt>
+    <dd>For zone locations, allows selection and ordering of multiple waypoints within the zone with individual orientations. Use drag-and-drop or buttons to reorder priority. Only visible when a zone is selected.</dd>
     
     <dt>Stubborn Period</dt>
     <dd>Time in seconds that the robot will attempt to reach the location before giving up (default: 0 = no limit).</dd>
@@ -663,11 +930,14 @@
     <dt>msg.location_name <span class="property-type">string</span></dt>
     <dd>The destination location name. Overrides node configuration if provided.</dd>
     
-    <dt>msg.zone_type <span class="property-type">string</span></dt>
-    <dd>For zone locations, the placement type (all, left, right, center, top, bottom, patient_facing, etc.).</dd>
+    <dt>msg.zone_type <span class="property-type">array</span></dt>
+    <dd>For zone locations, the placement types (e.g., ["left", "center"] or ["all"]).</dd>
     
-    <dt>msg.zone_preferred_waypoint <span class="property-type">string</span></dt>
-    <dd>For zone locations, specific waypoint name within the zone.</dd>
+    <dt>msg.zone_preferred_waypoints <span class="property-type">array</span></dt>
+    <dd>For zone locations, array of waypoint objects with optional orientations (e.g., [{waypoint: "wp1", orientation: 1.57}, {waypoint: "wp2"}]).</dd>
+    
+    <dt>msg.zone_final_facing <span class="property-type">number</span></dt>
+    <dd>For zone locations, the final facing direction in radians when the robot reaches the zone.</dd>
     
     <dt class="optional">msg.robot_name <span class="property-type">string</span></dt>
     <dd>Legacy alias for msg.rmf_robot_name.</dd>
@@ -701,7 +971,7 @@
   <h3>Details</h3>
   <p>This node sends a goto command to move a robot to a specified location. It supports both regular waypoint locations and zone locations with placement options.</p>
   
-  <p><b>Zone Support:</b> When a zone is selected, additional options appear for zone type (placement) and preferred waypoint selection. Zones provide flexible positioning within defined areas.</p>
+  <p><b>Zone Support:</b> When a zone is selected, additional options appear for zone types (multi-select placement) and preferred waypoint selection with priority ordering and individual orientations. Zones provide flexible positioning within defined areas.</p>
   
   <p><b>Fleet Integration:</b> The node automatically filters locations based on the selected robot fleet, ensuring only accessible locations are shown.</p>
   
