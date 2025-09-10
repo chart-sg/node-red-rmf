@@ -1,3 +1,12 @@
+<style>
+.waypoint-placeholder {
+  background: #ffeb3b !important;
+  border: 2px dashed #ff9800 !important;
+  height: 30px !important;
+  margin: 2px 0 !important;
+}
+</style>
+
 <script type="text/javascript">
   // Event management utilities
   const TaskV2EventUtils = {
@@ -148,13 +157,31 @@
           </div>
           <div class="form-row">
             <label>Preferred Places (optional):</label>
-            <select class="event-zone-places" multiple style="width: 100%; height: 80px;">
-            </select>
-            <div class="form-tips">Hold Ctrl/Cmd to select multiple preferred parking spots within the zone</div>
+            <div class="event-zone-places-container" style="border: 1px solid #ddd; padding: 10px; max-height: 300px; overflow-y: auto;">
+              <div class="form-tips" style="margin-bottom: 10px;">Select waypoints from available list. Drag selected waypoints to reorder priority (top = highest priority).</div>
+              
+              <div style="display: flex; gap: 10px;">
+                <!-- Available waypoints -->
+                <div style="flex: 1;">
+                  <h4 style="margin: 0 0 5px 0; font-size: 12px; color: #666;">Available Waypoints</h4>
+                  <div class="available-waypoints" style="border: 1px solid #eee; padding: 5px; min-height: 100px; max-height: 150px; overflow-y: auto; background: #fafafa;">
+                    <!-- Available waypoints will be populated here -->
+                  </div>
+                </div>
+                
+                <!-- Selected waypoints (ordered) -->
+                <div style="flex: 1;">
+                  <h4 style="margin: 0 0 5px 0; font-size: 12px; color: #666;">Selected Waypoints (Priority Order)</h4>
+                  <div class="selected-waypoints" style="border: 1px solid #eee; padding: 5px; min-height: 100px; max-height: 150px; overflow-y: auto; background: #f0f8ff;">
+                    <!-- Selected waypoints will be shown here in order -->
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
           <div class="form-row">
             <label>Final Facing (radians, optional):</label>
-            <input type="number" class="event-zone-facing" step="0.1" placeholder="e.g., 1.57 (90 degrees)" style="width: 100%;">
+            <input type="number" class="event-zone-facing" step="0.01" placeholder="e.g., 1.57 (90 degrees) - applies if no waypoint orientations set" style="width: 100%;">
           </div>
         `);
         
@@ -175,20 +202,188 @@
           // Update places when zone changes
           zoneSelect.on('change', function() {
             const selectedZone = $(this).val();
-            placesSelect.empty();
+            const availableContainer = detailsDiv.find('.available-waypoints');
+            const selectedContainer = detailsDiv.find('.selected-waypoints');
+            
+            availableContainer.empty();
+            selectedContainer.empty();
             
             if (selectedZone) {
               const zone = node.rmfData.zones.find(z => z.name === selectedZone);
-              if (zone && zone.vertices) {
+              if (zone) {
+                console.log('Zone data for', selectedZone, ':', zone);
+                
                 const zoneVertices = getZoneVertices(zone);
-                zoneVertices.forEach(vertex => {
-                  if (vertex.name && vertex.name.trim() !== '') {
-                    placesSelect.append(`<option value="${vertex.name}">${vertex.name}</option>`);
+                console.log('Zone vertices:', zoneVertices);
+                
+                if (zoneVertices.length > 0) {
+                  zoneVertices.forEach((vertex, index) => {
+                    let vertexName, displayName, vertexValue;
+                    
+                    // Handle different zone vertex structures
+                    if (typeof vertex === 'object' && vertex.name) {
+                      // Vertex object with name
+                      vertexName = vertex.name;
+                      vertexValue = vertex.name;
+                      displayName = vertexName;
+                    } else if (typeof vertex === 'number') {
+                      // Vertex index - find corresponding vertex name from navGraphs
+                      const graph = node.rmfData.navGraphs ? node.rmfData.navGraphs.find(g => 
+                        g.name === zone.graph || g.vertices.length > vertex
+                      ) : null;
+                      
+                      if (graph && graph.vertices[vertex]) {
+                        vertexName = graph.vertices[vertex].name || `Vertex ${vertex}`;
+                        vertexValue = vertexName;
+                        displayName = `${vertexName} (Position ${index + 1})`;
+                      } else {
+                        vertexName = `Vertex ${vertex}`;
+                        vertexValue = `vertex_${vertex}`;
+                        displayName = `Position ${index + 1} (Index ${vertex})`;
+                      }
+                    } else {
+                      // Fallback for other structures
+                      vertexName = `Position ${index + 1}`;
+                      vertexValue = `vertex_${index}`;
+                      displayName = vertexName;
+                    }
+                    
+                    // Create available waypoint item
+                    const availableItem = $(`
+                      <div class="available-waypoint-item" data-waypoint="${vertexValue}" style="
+                        padding: 5px; 
+                        margin: 2px 0; 
+                        background: white; 
+                        border: 1px solid #ddd; 
+                        cursor: pointer;
+                        border-radius: 3px;
+                        font-size: 11px;
+                      ">
+                        <span style="color: #333;">${displayName}</span>
+                      </div>
+                    `);
+                    
+                    availableContainer.append(availableItem);
+                    
+                    // Handle click to add to selected
+                    availableItem.on('click', function() {
+                      const waypointValue = $(this).data('waypoint');
+                      addToSelectedWaypoints(waypointValue, displayName, selectedContainer, availableContainer);
+                    });
+                  });
+                  
+                  // Make selected waypoints sortable (fallback if jQuery UI not available)
+                  try {
+                    selectedContainer.sortable({
+                      items: '.selected-waypoint-item',
+                      placeholder: 'waypoint-placeholder',
+                      tolerance: 'pointer',
+                      cursor: 'move'
+                    });
+                  } catch (e) {
+                    console.log('jQuery UI sortable not available, using basic ordering');
                   }
-                });
+                }
               }
             }
           });
+          
+          // Function to add waypoint to selected list
+          function addToSelectedWaypoints(waypointValue, displayName, selectedContainer, availableContainer) {
+            // Check if already selected
+            if (selectedContainer.find(`[data-waypoint="${waypointValue}"]`).length > 0) {
+              return;
+            }
+            
+            const selectedItem = $(`
+              <div class="selected-waypoint-item" data-waypoint="${waypointValue}" style="
+                padding: 5px; 
+                margin: 2px 0; 
+                background: #e3f2fd; 
+                border: 1px solid #1976d2; 
+                border-radius: 3px;
+                font-size: 11px;
+                cursor: move;
+                display: flex;
+                align-items: center;
+                gap: 5px;
+              ">
+                <span class="drag-handle" style="cursor: ns-resize; color: #666; font-weight: bold;">⋮⋮</span>
+                <span style="flex: 1; color: #1565c0;">${displayName}</span>
+                <input type="number" class="waypoint-orientation" step="0.01" placeholder="orient." style="width: 50px; font-size: 10px;" title="Orientation in radians">
+                <button type="button" class="move-up" style="
+                  background: #4caf50; 
+                  color: white; 
+                  border: none; 
+                  border-radius: 2px; 
+                  width: 16px; 
+                  height: 16px; 
+                  font-size: 10px; 
+                  cursor: pointer;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                " title="Move up">↑</button>
+                <button type="button" class="move-down" style="
+                  background: #ff9800; 
+                  color: white; 
+                  border: none; 
+                  border-radius: 2px; 
+                  width: 16px; 
+                  height: 16px; 
+                  font-size: 10px; 
+                  cursor: pointer;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                " title="Move down">↓</button>
+                <button type="button" class="remove-waypoint" style="
+                  background: #d32f2f; 
+                  color: white; 
+                  border: none; 
+                  border-radius: 2px; 
+                  width: 16px; 
+                  height: 16px; 
+                  font-size: 10px; 
+                  cursor: pointer;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                " title="Remove waypoint">×</button>
+              </div>
+            `);
+            
+            selectedContainer.append(selectedItem);
+            
+            // Hide from available list
+            availableContainer.find(`[data-waypoint="${waypointValue}"]`).hide();
+            
+            // Handle move up button
+            selectedItem.find('.move-up').on('click', function(e) {
+              e.stopPropagation();
+              const prev = selectedItem.prev('.selected-waypoint-item');
+              if (prev.length > 0) {
+                selectedItem.insertBefore(prev);
+              }
+            });
+            
+            // Handle move down button
+            selectedItem.find('.move-down').on('click', function(e) {
+              e.stopPropagation();
+              const next = selectedItem.next('.selected-waypoint-item');
+              if (next.length > 0) {
+                selectedItem.insertAfter(next);
+              }
+            });
+            
+            // Handle remove button
+            selectedItem.find('.remove-waypoint').on('click', function(e) {
+              e.stopPropagation();
+              selectedItem.remove();
+              // Show back in available list
+              availableContainer.find(`[data-waypoint="${waypointValue}"]`).show();
+            });
+          }
           
           // Set values from eventData
           if (eventData.zone) {
@@ -201,9 +396,38 @@
           }
           if (eventData.places && Array.isArray(eventData.places)) {
             setTimeout(() => {
-              const placeNames = eventData.places.map(p => typeof p === 'string' ? p : p.name);
-              placesSelect.val(placeNames);
-              console.log('Set zone places to:', placeNames);
+              eventData.places.forEach(place => {
+                let waypointName, orientation;
+                
+                if (typeof place === 'string') {
+                  waypointName = place;
+                  orientation = undefined;
+                } else if (place.waypoint) {
+                  waypointName = place.waypoint;
+                  orientation = place.orientation;
+                }
+                
+                if (waypointName) {
+                  const availableContainer = detailsDiv.find('.available-waypoints');
+                  const selectedContainer = detailsDiv.find('.selected-waypoints');
+                  const availableItem = availableContainer.find(`[data-waypoint="${waypointName}"]`);
+                  
+                  if (availableItem.length > 0) {
+                    // Find the display name from available item
+                    const displayName = availableItem.find('span').text();
+                    
+                    // Add to selected (this will call our function)
+                    addToSelectedWaypoints(waypointName, displayName, selectedContainer, availableContainer);
+                    
+                    // Set orientation if provided
+                    if (orientation !== undefined) {
+                      const selectedItem = selectedContainer.find(`[data-waypoint="${waypointName}"]`);
+                      selectedItem.find('.waypoint-orientation').val(orientation);
+                    }
+                  }
+                }
+              });
+              console.log('Set zone places from eventData:', eventData.places);
             }, 100);
           }
           if (eventData.facing !== undefined) {
@@ -249,13 +473,30 @@
             eventData.types = typesString.split(',').map(t => t.trim()).filter(t => t);
           }
           
-          // Get selected places
-          const selectedPlaces = eventDiv.find('.event-zone-places').val();
-          if (selectedPlaces && selectedPlaces.length > 0) {
-            eventData.places = selectedPlaces.map(place => ({ name: place }));
+          // Get selected places with orientations (in order)
+          const selectedPlaces = [];
+          eventDiv.find('.selected-waypoint-item').each(function() {
+            const waypointName = $(this).data('waypoint');
+            const orientationInput = $(this).find('.waypoint-orientation');
+            const orientation = orientationInput.val();
+            
+            if (orientation && orientation.trim()) {
+              // Create place object with waypoint and orientation
+              selectedPlaces.push({
+                waypoint: waypointName,
+                orientation: parseFloat(orientation)
+              });
+            } else {
+              // Create place object with just waypoint
+              selectedPlaces.push({ waypoint: waypointName });
+            }
+          });
+          
+          if (selectedPlaces.length > 0) {
+            eventData.places = selectedPlaces;
           }
           
-          // Get facing direction
+          // Get facing direction (fallback for overall zone facing)
           const facing = eventDiv.find('.event-zone-facing').val();
           if (facing && facing.trim()) {
             eventData.facing = parseFloat(facing);
@@ -320,9 +561,50 @@
             }
             if (eventData.places && Array.isArray(eventData.places)) {
               setTimeout(() => {
-                const placeNames = eventData.places.map(p => typeof p === 'string' ? p : p.name);
-                eventDiv.find('.event-zone-places').val(placeNames);
-                console.log(`Set zone places to:`, placeNames);
+                eventData.places.forEach(place => {
+                  let waypointName, orientation;
+                  
+                  if (typeof place === 'string') {
+                    waypointName = place;
+                    orientation = undefined;
+                  } else if (place.waypoint) {
+                    waypointName = place.waypoint;
+                    orientation = place.orientation;
+                  } else if (place.name) {
+                    // Legacy support for old format
+                    waypointName = place.name;
+                    orientation = place.orientation;
+                  }
+                  
+                  if (waypointName) {
+                    const availableContainer = eventDiv.find('.available-waypoints');
+                    const selectedContainer = eventDiv.find('.selected-waypoints');
+                    const availableItem = availableContainer.find(`[data-waypoint="${waypointName}"]`);
+                    
+                    if (availableItem.length > 0) {
+                      // Find the display name from available item
+                      const displayName = availableItem.find('span').text();
+                      
+                      // Add to selected (this will call our function)
+                      const addToSelectedWaypoints = eventDiv.closest('.event-details').data('addToSelectedWaypoints');
+                      if (typeof addToSelectedWaypoints === 'function') {
+                        addToSelectedWaypoints(waypointName, displayName, selectedContainer, availableContainer);
+                      } else {
+                        // Fallback - directly add to selected
+                        availableItem.click();
+                      }
+                      
+                      // Set orientation if provided
+                      if (orientation !== undefined) {
+                        setTimeout(() => {
+                          const selectedItem = selectedContainer.find(`[data-waypoint="${waypointName}"]`);
+                          selectedItem.find('.waypoint-orientation').val(orientation);
+                        }, 10);
+                      }
+                    }
+                  }
+                });
+                console.log(`Set zone places from saved data:`, eventData.places);
               }, 100);
             }
             if (eventData.facing !== undefined) {
@@ -361,9 +643,23 @@
           if (typesString && typesString.trim()) {
             currentData.types = typesString.split(',').map(t => t.trim()).filter(t => t);
           }
-          const selectedPlaces = eventDiv.find('.event-zone-places').val();
-          if (selectedPlaces && selectedPlaces.length > 0) {
-            currentData.places = selectedPlaces.map(place => ({ name: place }));
+          const selectedPlaces = [];
+          eventDiv.find('.selected-waypoint-item').each(function() {
+            const waypointName = $(this).data('waypoint');
+            const orientationInput = $(this).find('.waypoint-orientation');
+            const orientation = orientationInput.val();
+            
+            if (orientation && orientation.trim()) {
+              selectedPlaces.push({
+                waypoint: waypointName,
+                orientation: parseFloat(orientation)
+              });
+            } else {
+              selectedPlaces.push({ waypoint: waypointName });
+            }
+          });
+          if (selectedPlaces.length > 0) {
+            currentData.places = selectedPlaces;
           }
           const facing = eventDiv.find('.event-zone-facing').val();
           if (facing && facing.trim()) {
@@ -677,7 +973,7 @@
   </div>
   
   <div class="form-row">
-    <label for="node-input-task_category">Task Category</label>
+    <label for="node-input-task_category">Task Title</label>
     <input type="text" id="node-input-task_category" placeholder="e.g., Patrol, Cleaning, Custom Task" style="width: 100%;">
   </div>
   
@@ -708,7 +1004,7 @@
     
     <b>Events:</b><br/>
     • Go To Place: Navigate to a specific waypoint location<br/>
-    • Go To Zone: Navigate to a zone with optional parking preferences<br/>
+    • Go To Zone: Navigate to a zone with priority-ordered waypoint selection and individual orientations<br/>
     • Perform Action: Execute custom actions (teleop, cleaning, etc.)<br/>
     • Events execute in order as a sequence within a single phase
   </div>
@@ -743,8 +1039,8 @@
     <dt>msg.rmf_robot_fleet <span class="property-type">string</span></dt>
     <dd>Robot fleet (overrides config)</dd>
     
-    <dt>msg.task_category <span class="property-type">string</span></dt>
-    <dd>Task category (overrides config)</dd>
+    <dt>msg.task_title <span class="property-type">string</span></dt>
+    <dd>Task title (overrides config)</dd>
     
     <dt>msg.task_detail <span class="property-type">string</span></dt>
     <dd>Task detail (overrides config)</dd>
@@ -805,7 +1101,7 @@
   <p><strong>Supported Events:</strong></p>
   <ul>
     <li><strong>Go To Place:</strong> Navigate robot to a specific waypoint</li>
-    <li><strong>Go To Zone:</strong> Navigate robot to a zone with optional parking spots and facing direction</li>
+    <li><strong>Go To Zone:</strong> Navigate robot to a zone with priority-ordered waypoint selection, individual waypoint orientations, and facing direction</li>
     <li><strong>Perform Action:</strong> Execute custom actions with configurable category and description</li>
   </ul>
   
