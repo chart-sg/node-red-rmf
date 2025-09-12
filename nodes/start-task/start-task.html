@@ -107,7 +107,9 @@
       config: { type: 'rmf-config', required: true },
       robot_name: { value: '' },
       robot_fleet: { value: '' },
-      estimate: { value: '{}' }
+      estimate: { value: '{}' },
+      timeout: { value: 300 },
+      parallel_behaviour: { value: 'queue' }
     },
     inputs: 1,
     outputs: 2,
@@ -224,6 +226,21 @@
     <input type="text" id="node-input-estimate" placeholder='{"duration": 300}' style="width: 100%;">
   </div>
   
+  <div class="form-row">
+    <label for="node-input-timeout">Task Standby Timeout (seconds)</label>
+    <input type="number" id="node-input-timeout" min="1" style="width: 100%;" placeholder="300">
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-parallel_behaviour">Task Behaviour</label>
+    <select id="node-input-parallel_behaviour" style="width: 100%;">
+      <option value="ignore">Ignore - Skip if robot has active RMF task</option>
+      <option value="continue">Continue - Continue existing RMF task if robot is free (standby)</option>
+      <option value="overwrite">Overwrite - Cancel current RMF task if busy (underway)</option>
+      <option value="queue">Queue - Always create new RMF task regardless of robot status</option>
+    </select>
+  </div>
+  
   <div class="form-tips">
     <b>Purpose:</b><br/>
     Creates and initializes RMF tasks for robots. This node handles the RMF task lifecycle and prepares robots for dynamic event execution.<br/><br/>
@@ -254,11 +271,11 @@
     <dt>Estimate <span class="property-type">object</span></dt>
     <dd>JSON object containing task estimates (optional). Example: {"duration": 300}</dd>
     
-    <dt>Stubborn Period <span class="property-type">number</span></dt>
-    <dd>How long the task should persist in seconds (default: 0)</dd>
+    <dt>Task Standby Timeout <span class="property-type">number</span></dt>
+    <dd>How long to wait for task to reach standby status in seconds (default: 300)</dd>
     
-    <dt>Parallel Behaviour <span class="property-type">string</span></dt>
-    <dd>How to handle conflicting tasks: "abort", "overwrite", or "queue" (default: "abort")</dd>
+    <dt>Task Behaviour <span class="property-type">string</span></dt>
+    <dd>How to handle robots with active RMF tasks: "ignore" (skip if has task), "continue" (only if standby), "overwrite" (cancel current), or "queue" (always create new) - default: "queue"</dd>
   </dl>
   
   <h3>Inputs</h3>
@@ -316,5 +333,5 @@
   
   <p><strong>Workflow:</strong> Connect start-task → goto-place → end-task for complete task lifecycle management.</p>
   
-  <p><strong>Task Reuse:</strong> If a robot already has an active task, the node will reuse it based on the parallel behaviour setting.</p>
+  <p><strong>Task Reuse:</strong> If a robot already has an active task, the node will reuse it based on the task behaviour setting.</p>
 </script>

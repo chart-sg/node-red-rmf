@@ -10,6 +10,8 @@ module.exports = function (RED) {
     node.robot_name = config.robot_name;
     node.robot_fleet = config.robot_fleet;
     node.estimate = config.estimate;
+    node.timeout = config.timeout || 300; // Default 5 minutes
+    node.parallel_behaviour = config.parallel_behaviour || 'queue';
 
     // Get reference to rmf-config
     node.configNode = RED.nodes.getNode(config.config);
@@ -155,34 +157,123 @@ module.exports = function (RED) {
           return;
         }
 
-        setStatus('blue', 'dot', 'Creating task');
-
-        // Check if robot already has a task (only for specific robot assignments)
+        // Handle parallel behavior if robot name and fleet are specified
+        const parallelBehaviour = node.parallel_behaviour || msg.parallel_behaviour || 'queue';
+        
         if (robotName && robotFleet) {
-          const latestRobotContext = rmfContextManager.getRobotContext(robotName, robotFleet);
-          if (latestRobotContext && latestRobotContext.task_id && latestRobotContext.dynamic_event_seq) {
-            console.log(`[START-TASK] Robot ${robotName} already has task_id: ${latestRobotContext.task_id} and dynamic_event_seq: ${latestRobotContext.dynamic_event_seq}`);
+          const robotContext = rmfContextManager.getRobotContext(robotName, robotFleet);
+          
+          // Check if robot has an active RMF task with dynamic events
+          // Active means: has task_id, dynamic_event_seq, and status is NOT 'completed'
+          const hasActiveTask = robotContext && 
+                               robotContext.task_id && 
+                               robotContext.dynamic_event_seq && 
+                               robotContext.dynamic_event_status && 
+                               robotContext.dynamic_event_status !== 'completed';
+          
+          console.log(`[START-TASK] Robot ${robotName} has active task: ${hasActiveTask}, parallel behavior: ${parallelBehaviour}`);
+          
+          if (hasActiveTask) {
+            const currentStatus = robotContext.dynamic_event_status;
+            const currentEventId = robotContext.dynamic_event_id;
             
-            // Robot already has a complete task setup - reuse it
-            setStatus('green', 'dot', 'Task ready');
-            msg.payload = {
-              status: 'ready',
-              rmf_robot_name: robotName,
-              rmf_robot_fleet: robotFleet,
-              rmf_task_id: latestRobotContext.task_id,
-              dynamic_event_seq: latestRobotContext.dynamic_event_seq,
-              message: `Reusing existing task for robot ${robotName}`
-            };
+            console.log(`[START-TASK] Robot has active task with status: ${currentStatus}, event ID: ${currentEventId}, applying parallel behavior: ${parallelBehaviour}`);
             
-            // Add RMF metadata for persistence through the flow
-            msg.rmf_task_id = latestRobotContext.task_id;
-            msg.rmf_robot_name = robotName;
-            msg.rmf_robot_fleet = robotFleet;
-            
-            send([msg, null]); // Send to success output
-            return done();
+            if (parallelBehaviour === 'ignore') {
+              // Ignore this new request, let existing task continue
+              setStatus('yellow', 'ring', 'Request ignored');
+              console.log(`[START-TASK] Ignoring new request due to parallel behavior: ignore (robot has active task)`);
+              
+              msg.payload = { 
+                status: 'ignored', 
+                reason: `Robot has active RMF task with dynamic events. New request ignored due to parallel behavior: ${parallelBehaviour}`,
+                rmf_robot_name: robotName,
+                rmf_robot_fleet: robotFleet
+              };
+              
+              send([null, msg]); // Send to failed output
+              return done();
+              
+            } else if (parallelBehaviour === 'continue') {
+              if (currentStatus === 'standby') {
+                // Robot is in standby, can proceed without creating new task
+                console.log(`[START-TASK] Robot in standby, continuing with existing task context`);
+                
+                setStatus('green', 'dot', 'Task ready');
+                msg.payload = {
+                  status: 'ready',
+                  rmf_robot_name: robotName,
+                  rmf_robot_fleet: robotFleet,
+                  rmf_task_id: robotContext.task_id,
+                  dynamic_event_seq: robotContext.dynamic_event_seq,
+                  message: `Continuing with existing task for robot ${robotName}`
+                };
+                
+                // Add RMF metadata for persistence through the flow
+                msg.rmf_task_id = robotContext.task_id;
+                msg.rmf_robot_name = robotName;
+                msg.rmf_robot_fleet = robotFleet;
+                msg.rmf_dynamic_event_seq = robotContext.dynamic_event_seq;
+                
+                send([msg, null]); // Send to success output
+                return done();
+              } else {
+                // Robot is underway, cannot continue
+                setStatus('red', 'ring', 'Robot underway');
+                msg.payload = { 
+                  status: 'failed', 
+                  reason: `Robot is underway with existing task. Cannot continue due to parallel behavior: ${parallelBehaviour}`,
+                  rmf_robot_name: robotName,
+                  rmf_robot_fleet: robotFleet
+                };
+                
+                send([null, msg]); // Send to failed output
+                return done();
+              }
+              
+            } else if (parallelBehaviour === 'overwrite') {
+              // Cancel the current task first, then proceed with new task
+              setStatus('yellow', 'dot', 'Cancelling current task');
+              console.log(`[START-TASK] Cancelling current task to overwrite with new request`);
+              
+              try {
+                const cancelResult = await rmfContextManager.sendDynamicEventControl('cancel', {
+                  robot_name: robotName,
+                  robot_fleet: robotFleet,
+                  dynamic_event_seq: robotContext.dynamic_event_seq,
+                  dynamic_event_id: currentEventId
+                });
+                
+                if (!cancelResult.success) {
+                  setStatus('red', 'ring', 'Cancel failed');
+                  msg.payload = { 
+                    status: 'failed', 
+                    reason: `Failed to cancel current task for overwrite: ${cancelResult.error || 'Unknown error'}` 
+                  };
+                  send([null, msg]);
+                  return done();
+                }
+                
+                console.log(`[START-TASK] Current task cancelled successfully, proceeding with new task`);
+                // Small delay to let the cancellation complete
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+              } catch (error) {
+                setStatus('red', 'ring', 'Cancel error');
+                msg.payload = { 
+                  status: 'failed', 
+                  reason: `Error cancelling current task for overwrite: ${error.message}` 
+                };
+                send([null, msg]);
+                return done();
+              }
+            }
+            // For 'queue' behavior, proceed to create new task (no early return)
+            console.log(`[START-TASK] Queue behavior: proceeding to create new RMF task despite active task`);
           }
         }
+
+        setStatus('blue', 'dot', 'Creating task');
 
         // Create new RMF task
         const taskData = {
@@ -211,7 +302,7 @@ module.exports = function (RED) {
         setStatus('yellow', 'dot', 'Waiting for standby');
 
         // Wait for task to reach standby status
-        const standbyResult = await waitForTaskStandby(createResult.taskId, robotName, robotFleet);
+        const standbyResult = await waitForTaskStandby(createResult.taskId, robotName, robotFleet, node.timeout);
         if (!standbyResult.success) {
           setStatus('red', 'ring', 'Standby failed');
           msg.payload = { 
@@ -282,12 +373,12 @@ module.exports = function (RED) {
     }
 
     // Wait for task to reach standby status
-    async function waitForTaskStandby(taskId, robotName, fleetName) {
+    async function waitForTaskStandby(taskId, robotName, fleetName, timeoutSeconds = 300) {
       return new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
           rmfContextManager.unsubscribeFromTaskStatus(taskId);
-          reject(new Error('Task standby timeout'));
-        }, 30000); // 30 second timeout
+          reject(new Error(`Task standby timeout after ${timeoutSeconds} seconds`));
+        }, timeoutSeconds * 1000); // Convert to milliseconds
         
         const onStatusUpdate = (data) => {
           try {
