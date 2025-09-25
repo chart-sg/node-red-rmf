@@ -98,7 +98,7 @@
 
   RED.nodes.registerType('cancel-taskV2', {
     category: 'RMF Task V2',
-    color: '#f44336',
+    color: '#87CEEB',
     defaults: {
       name: { value: '' },
       config: { type: 'rmf-config', required: true },
@@ -109,10 +109,11 @@
     inputs: 1,
     outputs: 2,
     outputLabels: ["success", "failed"],
-    icon: 'font-awesome/fa-stop-circle',
+    icon: 'rmf.svg',
     label: function () {
-      return this.name || 'cancel-taskV2';
+      return this.name || 'Cancel TaskV2';
     },
+    paletteLabel: 'Cancel TaskV2',
     oneditprepare: function() {
       const node = this;
       

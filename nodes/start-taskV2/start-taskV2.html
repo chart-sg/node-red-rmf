@@ -838,7 +838,7 @@
 
   RED.nodes.registerType('start-taskV2', {
     category: 'RMF Task V2',
-    color: '#8bc34a',
+    color: '#87CEEB',
     defaults: {
       name: { value: '' },
       config: { type: 'rmf-config', required: true },
@@ -851,10 +851,11 @@
     inputs: 1,
     outputs: 3,
     outputLabels: ["success", "failed", "status"],
-    icon: 'font-awesome/fa-play-circle',
+    icon: 'rmf.svg',
     label: function () {
-      return this.name || 'start-taskV2';
+      return this.name || 'Start TaskV2';
     },
+    paletteLabel: 'Start TaskV2',
     oneditprepare: function() {
       const node = this;
       

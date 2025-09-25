@@ -100,8 +100,8 @@
   };
 
   RED.nodes.registerType('start-task', {
-    category: 'RMF Dynamic Event Control',
-    color: '#a6bbcf',
+    category: 'RMF Dynamic Events',
+    color: '#4A90E2',
     defaults: {
       name: { value: '' },
       config: { type: 'rmf-config', required: true },
@@ -114,10 +114,11 @@
     inputs: 1,
     outputs: 2,
     outputLabels: ["success", "failed"],
-    icon: 'font-awesome/fa-play',
+    icon: 'rmf.svg',
     label: function () {
-      return this.name || 'start-task';
+      return this.name || 'Start DE';
     },
+    paletteLabel: 'Start DE',
     oneditprepare: function() {
       const node = this;
       

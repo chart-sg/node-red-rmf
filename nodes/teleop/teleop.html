@@ -153,8 +153,8 @@
   }
 
   RED.nodes.registerType('teleop', {
-    category: 'RMF Dynamic Event Task',
-    color: '#2E8B57',
+    category: 'RMF Dynamic Events',
+    color: '#6BB6FF',
     defaults: {
       name: { value: '' },
       config: { type: 'rmf-config', required: true },
@@ -166,10 +166,11 @@
     inputs: 1,
     outputs: 2,
     outputLabels: ["success", "failed"],
-    icon: 'font-awesome/fa-gamepad',
+    icon: 'rmf.svg',
     label: function () {
-      return this.name || 'teleop';
+      return this.name || 'Teleop';
     },
+    paletteLabel: 'Teleop',
     oneditprepare: function() {
       const node = this;
       

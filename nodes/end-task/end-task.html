@@ -1,7 +1,7 @@
 <script type="text/javascript">
   RED.nodes.registerType('end-task', {
-    category: 'RMF Dynamic Event Control',
-    color: '#ff6b35',
+    category: 'RMF Dynamic Events',
+    color: '#4A90E2',
     defaults: {
       name: { value: '' },
       config: { type: 'rmf-config', required: true },
@@ -10,10 +10,11 @@
     },
     inputs: 1,
     outputs: 1,
-    icon: 'font-awesome/fa-stop-circle',
+    icon: 'rmf.svg',
     label: function () {
-      return this.name || 'end-task';
+      return this.name || 'End DE';
     },
+    paletteLabel: 'End DE',
     oneditprepare: function() {
       const node = this;
       

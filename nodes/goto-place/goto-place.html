@@ -9,8 +9,8 @@
 
 <script type="text/javascript">
   RED.nodes.registerType('goto-place', {
-    category: 'RMF Dynamic Event Task',
-    color: '#f7c74f',
+    category: 'RMF Dynamic Events',
+    color: '#6BB6FF',
     defaults: {
       name: { value: '' },
       config: { type: 'rmf-config', required: true },
@@ -26,10 +26,11 @@
     inputs: 1,
     outputs: 3,
     outputLabels: ["success", "failed", "status"],
-    icon: 'font-awesome/fa-location-arrow',
+    icon: 'rmf.svg',
     label: function () {
-      return this.name || 'goto-place';
+      return this.name || 'Goto-place';
     },
+    paletteLabel: 'Goto-place',
     oneditprepare: function() {
       const node = this;
       

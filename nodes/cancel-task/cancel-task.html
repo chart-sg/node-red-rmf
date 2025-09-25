@@ -1,7 +1,7 @@
 <script type="text/javascript">
   RED.nodes.registerType('cancel-task', {
-    category: 'RMF Dynamic Event Control',
-    color: '#ff6b6b',
+    category: 'RMF Dynamic Events',
+    color: '#4A90E2',
     defaults: {
       name: { value: '' },
       config: { type: 'rmf-config', required: true },
@@ -10,10 +10,11 @@
     },
     inputs: 1,
     outputs: 1,
-    icon: 'font-awesome/fa-times-circle',
+    icon: 'rmf.svg',
     label: function () {
-      return this.name || 'cancel-task';
+      return this.name || 'Cancel DE';
     },
+    paletteLabel: 'Cancel DE',
     oneditprepare: function() {
       const node = this;
       

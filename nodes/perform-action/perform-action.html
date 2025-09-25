@@ -153,8 +153,8 @@
   }
 
   RED.nodes.registerType('perform-action', {
-    category: 'RMF Dynamic Event Task',
-    color: '#ff9f1c',
+    category: 'RMF Dynamic Events',
+    color: '#6BB6FF',
     defaults: {
       name: { value: '' },
       config: { type: 'rmf-config', required: true },
@@ -166,10 +166,11 @@
     inputs: 1,
     outputs: 2,
     outputLabels: ["success", "failed"],
-    icon: 'font-awesome/fa-cogs',
+    icon: 'rmf.svg',
     label: function () {
-      return this.name || 'perform-action';
+      return this.name || 'Perform-action';
     },
+    paletteLabel: 'Perform-action',
     oneditprepare: function() {
       const node = this;
       
