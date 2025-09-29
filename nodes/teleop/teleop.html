@@ -1,0 +1,268 @@
+<script type="text/javascript">
+  // Check if RMFFormUtils is already loaded to avoid duplicates
+  if (typeof window.RMFFormUtils === 'undefined') {
+    // Shared RMF Form Utilities - loaded once per page
+    window.RMFFormUtils = {
+      populateRobotDropdown: function(options = {}) {
+        const { node, selectId = 'node-input-robot_name', placeholder = 'Use msg.rmf_robot_name', valueProperty = 'robot_name' } = options;
+        const select = $(`#${selectId}`);
+        const currentValue = node.isLoaded ? select.val() : node[valueProperty];
+        
+        select.empty().append(`<option value="">${placeholder}</option>`);
+        
+        if (node.rmfData && node.rmfData.robots && node.rmfData.robots.length > 0) {
+          node.rmfData.robots.forEach(robot => {
+            select.append(`<option value="${robot.name}" data-fleet="${robot.fleet}">${robot.name} (${robot.fleet})</option>`);
+          });
+        }
+        
+        select.val(currentValue || '');
+      },
+
+      populateFleetDropdown: function(options = {}) {
+        const { node, selectId = 'node-input-robot_fleet', placeholder = 'Use msg.rmf_robot_fleet', valueProperty = 'robot_fleet' } = options;
+        const select = $(`#${selectId}`);
+        const currentValue = node.isLoaded ? select.val() : node[valueProperty];
+        
+        select.empty().append(`<option value="">${placeholder}</option>`);
+        
+        if (node.rmfData && node.rmfData.fleets && node.rmfData.fleets.length > 0) {
+          node.rmfData.fleets.forEach(fleet => {
+            select.append(`<option value="${fleet}">${fleet}</option>`);
+          });
+        }
+        
+        select.val(currentValue || '');
+      },
+
+      setupRobotFleetHandlers: function(options = {}) {
+        const { node, robotSelectId = 'node-input-robot_name', fleetSelectId = 'node-input-robot_fleet' } = options;
+        const robotSelect = $(`#${robotSelectId}`);
+        const fleetSelect = $(`#${fleetSelectId}`);
+
+        // Robot selection change handler
+        robotSelect.off('change').on('change', function() {
+          const selectedRobot = $(this).val();
+          const selectedOption = $(this).find('option:selected');
+          const robotFleet = selectedOption.data('fleet');
+          
+          if (selectedRobot && selectedRobot !== '' && robotFleet) {
+            fleetSelect.val(robotFleet);
+          } else {
+            fleetSelect.val('');
+          }
+        });
+
+        // Fleet selection change handler  
+        fleetSelect.off('change').on('change', function() {
+          const selectedFleet = $(this).val();
+          const currentRobot = robotSelect.val();
+          
+          if (currentRobot && selectedFleet && node.rmfData && node.rmfData.robots) {
+            const robot = node.rmfData.robots.find(r => r.name === currentRobot);
+            if (robot && robot.fleet !== selectedFleet) {
+              robotSelect.val('');
+            }
+          }
+          
+          // Filter robots by fleet
+          if (selectedFleet && selectedFleet !== '') {
+            robotSelect.empty().append('<option value="">Use msg.rmf_robot_name</option>');
+            if (node.rmfData && node.rmfData.robots) {
+              node.rmfData.robots.forEach(robot => {
+                if (robot.fleet === selectedFleet) {
+                  robotSelect.append(`<option value="${robot.name}" data-fleet="${robot.fleet}">${robot.name} (${robot.fleet})</option>`);
+                }
+              });
+            }
+            const robotFromFleet = node.rmfData.robots ? node.rmfData.robots.find(r => r.name === currentRobot && r.fleet === selectedFleet) : null;
+            if (robotFromFleet) {
+              robotSelect.val(currentRobot);
+            }
+          } else {
+            robotSelect.empty().append('<option value="">Use msg.rmf_robot_name</option>');
+            if (node.rmfData && node.rmfData.robots) {
+              node.rmfData.robots.forEach(robot => {
+                robotSelect.append(`<option value="${robot.name}" data-fleet="${robot.fleet}">${robot.name} (${robot.fleet})</option>`);
+              });
+            }
+            robotSelect.val(currentRobot);
+          }
+        });
+      },
+
+      showDataStatus: function(message, type = 'info', configSelectId = 'node-input-config') {
+        $('.rmf-data-status').remove();
+        let color = '#2196f3', icon = 'fa-info-circle';
+        if (type === 'error') { color = '#f44336'; icon = 'fa-exclamation-triangle'; }
+        else if (type === 'success') { color = '#4caf50'; icon = 'fa-check-circle'; }
+        const statusDiv = $(`<div class="rmf-data-status form-tips" style="color: ${color}; margin-top: 10px;"><i class="fa ${icon}" style="margin-right: 5px;"></i>${message}</div>`);
+        $(`#${configSelectId}`).closest('.form-row').after(statusDiv);
+      },
+
+      loadRMFData: async function(node) {
+        try {
+          $('.rmf-data-status').remove();
+          
+          const response = await $.get('/rmf/data');
+          
+          if (response && response.robots) {
+            node.rmfData.robots = response.robots;
+            node.rmfData.fleets = [...new Set(response.robots.map(r => r.fleet))];
+            
+            this.populateRobotDropdown({ node });
+            this.populateFleetDropdown({ node });
+            this.showDataStatus(`Loaded ${response.robots.length} robots`, 'success');
+          } else {
+            node.rmfData.robots = [];
+            node.rmfData.fleets = [];
+            this.populateRobotDropdown({ node });
+            this.populateFleetDropdown({ node });
+            this.showDataStatus('No robot data available', 'warning');
+          }
+          
+        } catch (error) {
+          console.error('Failed to load RMF data:', error);
+          node.rmfData.robots = [];
+          node.rmfData.fleets = [];
+          this.populateRobotDropdown({ node });
+          this.populateFleetDropdown({ node });
+          this.showDataStatus('Failed to load RMF data', 'error');
+        }
+      },
+
+      setupRefreshButton: function(node, buttonId = 'refresh-rmf-data') {
+        $(`#${buttonId}`).on('click', async () => {
+          const button = $(`#${buttonId}`);
+          const originalText = button.html();
+          
+          // Show loading state
+          button.html('<i class="fa fa-spinner fa-spin"></i> Loading...');
+          button.prop('disabled', true);
+          
+          try {
+            await this.loadRMFData(node);
+          } finally {
+            // Restore button
+            button.html(originalText);
+            button.prop('disabled', false);
+          }
+        });
+      }
+    };
+  }
+
+  RED.nodes.registerType('teleop', {
+    category: 'RMF Dynamic Events',
+    color: '#6BB6FF',
+    defaults: {
+      name: { value: '' },
+      config: { type: 'rmf-config', required: true },
+      robot_name: { value: '' },
+      robot_fleet: { value: '' },
+      teleop_description: { value: '' },
+      teleop_duration: { value: 0 }
+    },
+    inputs: 1,
+    outputs: 2,
+    outputLabels: ["success", "failed"],
+    icon: 'rmf.svg',
+    label: function () {
+      return this.name || 'Teleop';
+    },
+    paletteLabel: 'Teleop',
+    oneditprepare: function() {
+      const node = this;
+      
+      // Initialize data storage
+      node.rmfData = { robots: [], fleets: [] };
+      
+      // Use shared RMF form utilities
+      if (typeof window.RMFFormUtils !== 'undefined') {
+        // Load RMF data
+        window.RMFFormUtils.loadRMFData(node);
+        
+        // Setup refresh button
+        window.RMFFormUtils.setupRefreshButton(node);
+        
+        // Setup robot/fleet handlers
+        window.RMFFormUtils.setupRobotFleetHandlers({ node });
+      } else {
+        console.warn('RMFFormUtils not available');
+      }
+    }
+  });
+</script>
+
+<script type="text/html" data-template-name="teleop">
+  <div class="form-row">
+    <label for="node-input-name">Name</label>
+    <input type="text" id="node-input-name">
+  </div>
+  <div class="form-row">
+    <label for="node-input-config"><i class="fa fa-cogs"></i> RMF Config</label>
+    <input type="text" id="node-input-config" style="width: 60%;">
+    <button type="button" id="refresh-rmf-data" class="red-ui-button" style="margin-left: 10px; width: auto;">
+      <i class="fa fa-refresh"></i> Refresh Data
+    </button>
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-robot_name">Robot Name</label>
+    <select id="node-input-robot_name" style="width: 100%;">
+      <option value="">Use msg.rmf_robot_name</option>
+    </select>
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-robot_fleet">Robot Fleet</label>
+    <select id="node-input-robot_fleet" style="width: 100%;">
+      <option value="">Use msg.rmf_robot_fleet</option>
+    </select>
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-teleop_description">Teleop Description</label>
+    <textarea id="node-input-teleop_description" placeholder="Optional description for the teleoperation session" rows="2" style="width: 100%;"></textarea>
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-teleop_duration">Duration (seconds)</label>
+    <input type="number" id="node-input-teleop_duration" min="0" step="1" placeholder="0 = no time limit" style="width: 100%;">
+  </div>
+  
+  <div class="form-tips">
+    <b>Purpose:</b><br/>
+    Initiates teleoperation mode for robots, allowing direct human control. This node is a specialized version of perform-action specifically for teleop operations.<br/><br/>
+    
+    <b>Usage:</b><br/>
+    • Connect after start-task node for complete workflow: start-task → teleop → end-task<br/>
+    • Robot name and fleet can come from previous nodes via RMF metadata<br/>
+    • Description field can provide context for the teleop session<br/>
+    • Duration can limit the teleop session (0 = unlimited)
+  </div>
+</script>
+
+<script type="text/html" data-help-name="teleop">
+  <p>Initiates teleoperation mode for robots, allowing direct human control. This is a specialized version of the perform-action node specifically designed for teleop operations.</p>
+  
+  <h3>Configuration</h3>
+  <dl class="message-properties">
+    <dt>Robot Name <span class="property-type">string</span></dt>
+    <dd>The name of the robot (optional). Select from dropdown or use "Use msg.rmf_robot_name" to pass via message. Usually passed from previous nodes via RMF metadata.</dd>
+    
+    <dt>Robot Fleet <span class="property-type">string</span></dt>
+    <dd>The fleet the robot belongs to (optional). Auto-selected when robot is chosen. Usually passed from previous nodes via RMF metadata.</dd>
+    
+    <dt>Teleop Description <span class="property-type">string</span></dt>
+    <dd>Optional description providing context for the teleoperation session.</dd>
+    
+    <dt>Duration <span class="property-type">number</span></dt>
+    <dd>Time limit for the teleop session in seconds. 0 means no time limit.</dd>
+  </dl>
+  
+  <h3>Workflow</h3>
+  <p><strong>start-task → teleop → end-task</strong> for complete task lifecycle management.</p>
+  
+  <p><strong>Teleop Support:</strong> The robot fleet must have teleop capabilities configured in its fleet adapter.</p>
+</script>

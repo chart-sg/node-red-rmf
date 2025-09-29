@@ -1,0 +1,32 @@
+# Development files
+.git/
+.gitignore
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test files
+test/
+tests/
+spec/
+coverage/
+
+# Export development files
+exportjson/
+test-deploy/
+
+# Documentation build
+*.md.backup
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/

@@ -1,0 +1,990 @@
+<style>
+.waypoint-placeholder {
+  background: #ffeb3b !important;
+  border: 2px dashed #ff9800 !important;
+  height: 30px !important;
+  margin: 2px 0 !important;
+}
+</style>
+
+<script type="text/javascript">
+  RED.nodes.registerType('goto-place', {
+    category: 'RMF Dynamic Events',
+    color: '#6BB6FF',
+    defaults: {
+      name: { value: '' },
+      config: { type: 'rmf-config', required: true },
+      robot_name: { value: '' },
+      robot_fleet: { value: '' },
+      location_name: { value: '' },
+      zone_type: { value: ['all'] },
+      zone_preferred_waypoints: { value: [] },
+      zone_final_facing: { value: '' },
+      stubborn_period: { value: 0 },
+      parallel_behaviour: { value: 'ignore' }
+    },
+    inputs: 1,
+    outputs: 3,
+    outputLabels: ["success", "failed", "status"],
+    icon: 'rmf.svg',
+    label: function () {
+      return this.name || 'Goto-place';
+    },
+    paletteLabel: 'Goto-place',
+    oneditprepare: function() {
+      const node = this;
+      
+      // Single source of truth for data
+      node.rmfData = { robots: [], locations: [], zones: [], fleets: [], navGraphs: [] };
+      
+      // Simple state tracking
+      node.isLoaded = false;
+      
+      // Constants
+      const PLACEMENT_LABELS = {
+        'all': 'All',
+        'center': 'Center',
+        'left': 'Left', 
+        'right': 'Right',
+        'top': 'Top',
+        'bottom': 'Bottom',
+        'human_facing': 'Human Facing'
+      };
+      
+      // Mapping from waypoint placement to zone type
+      const PLACEMENT_TO_ZONE_TYPE = {
+        'left': 'left',
+        'right': 'right',
+        'center': 'center',
+        'forward': 'top',
+        'backward': 'bottom'
+      };
+      
+      // Initialize
+      init();
+      
+      function init() {
+        // Initialize zone fields as hidden
+        $('#node-input-zone_type').closest('.form-row').hide();
+        $('#zone-preferred-waypoints-container').closest('.form-row').hide();
+        $('#node-input-zone_final_facing').closest('.form-row').hide();
+        
+        loadRMFData().then(() => {
+          populateAllDropdowns();
+          setupEventHandlers();
+          node.isLoaded = true;
+        });
+      }
+      
+      // SIMPLIFIED: Single data loading function
+      function loadRMFData() {
+        return $.getJSON('/rmf/data')
+          .done(data => {
+            console.log('Received RMF data:', data);
+            node.rmfData = data;
+            showStatus(data);
+          })
+          .fail(() => {
+            console.error('Failed to load RMF data');
+            node.rmfData = { robots: [], locations: [], zones: [], fleets: [], navGraphs: [] };
+            showStatus({ status: 'error', message: 'Failed to load RMF data' });
+          });
+      }
+      
+      // SIMPLIFIED: Single dropdown population function
+      function populateAllDropdowns() {
+        populateRobotDropdown();
+        populateFleetDropdown();
+        populateLevelDropdown();
+        populateLocationDropdown();
+        updateZoneFields();
+      }
+      
+      // SIMPLIFIED: Individual dropdown functions without complex state logic
+      function populateRobotDropdown() {
+        const select = $('#node-input-robot_name');
+        const currentValue = node.isLoaded ? select.val() : node.robot_name;
+        
+        select.empty().append('<option value="">Use msg.rmf_robot_name</option>');
+        
+        if (node.rmfData.robots && node.rmfData.robots.length > 0) {
+          node.rmfData.robots.forEach(robot => {
+            select.append(`<option value="${robot.name}" data-fleet="${robot.fleet}">${robot.name} (${robot.fleet})</option>`);
+          });
+        }
+        
+        select.val(currentValue || '');
+      }
+      
+      function populateFleetDropdown() {
+        const select = $('#node-input-robot_fleet');
+        const currentValue = node.isLoaded ? select.val() : node.robot_fleet;
+        
+        select.empty().append('<option value="">Use msg.rmf_robot_fleet</option>');
+        
+        if (node.rmfData.fleets && node.rmfData.fleets.length > 0) {
+          node.rmfData.fleets.forEach(fleet => {
+            select.append(`<option value="${fleet}">${fleet}</option>`);
+          });
+        }
+        
+        select.val(currentValue || '');
+      }
+      
+      function populateLevelDropdown() {
+        const select = $('#node-input-location_level');
+        if (select.length === 0) return; // Level dropdown might not exist
+        
+        const currentValue = node.isLoaded ? select.val() : node.location_level;
+        
+        select.empty().append('<option value="">All Levels</option>');
+        
+        // Extract unique levels from locations and zones
+        const levels = new Set();
+        
+        if (node.rmfData.navGraphs) {
+          node.rmfData.navGraphs.forEach(navGraph => {
+            if (navGraph.vertices) {
+              navGraph.vertices.forEach(vertex => {
+                const level = getVertexLevel(vertex);
+                if (level) levels.add(level);
+              });
+            }
+          });
+        }
+        
+        if (node.rmfData.zones) {
+          node.rmfData.zones.forEach(zone => {
+            if (zone.level) levels.add(zone.level);
+          });
+        }
+        
+        Array.from(levels).sort().forEach(level => {
+          select.append(`<option value="${level}">${level}</option>`);
+        });
+        
+        select.val(currentValue || '');
+      }
+      
+      function populateLocationDropdown() {
+        const select = $('#node-input-location_name');
+        const levelSelect = $('#node-input-location_level');
+        const fleetSelect = $('#node-input-robot_fleet');
+        
+        const currentValue = node.isLoaded ? select.val() : node.location_name;
+        const selectedLevel = levelSelect.length > 0 ? levelSelect.val() : '';
+        const selectedFleet = fleetSelect.val();
+        
+        console.log('Populating locations - Fleet:', selectedFleet, 'Level:', selectedLevel);
+        
+        select.empty().append('<option value="">Use msg.location_name</option>');
+        
+        // Get relevant nav graphs (filter by fleet if specified)
+        let relevantNavGraphs = node.rmfData.navGraphs || [];
+        if (selectedFleet) {
+          relevantNavGraphs = relevantNavGraphs.filter(ng => 
+            ng.fleet === selectedFleet || ng.name === selectedFleet
+          );
+          console.log('Filtered navGraphs for fleet', selectedFleet, ':', relevantNavGraphs.length);
+        }
+        
+        // Extract locations from nav graphs
+        const locations = new Map(); // Use Map to avoid duplicates while keeping metadata
+        
+        relevantNavGraphs.forEach(navGraph => {
+          if (navGraph.vertices) {
+            navGraph.vertices.forEach(vertex => {
+              if (vertex.name && vertex.name.trim() !== '') {
+                const vertexLevel = getVertexLevel(vertex);
+                if (!selectedLevel || vertexLevel === selectedLevel) {
+                  // Check if this vertex is part of a zone
+                  const isPartOfZone = node.rmfData.zones && node.rmfData.zones.some(zone => {
+                    const zoneVertices = getZoneVertices(zone);
+                    if (zoneVertices.length === 0) return false;
+                    
+                    // Check different possible zone vertex structures
+                    const found = zoneVertices.some(zv => {
+                      // Check by name if available
+                      if (zv.name && zv.name === vertex.name) return true;
+                      
+                      // Check by vertex index if zone vertices are indices
+                      if (typeof zv === 'number' && vertex.index === zv) return true;
+                      
+                      // Check if zone vertex has same coordinates as this vertex
+                      if (zv.x !== undefined && zv.y !== undefined && 
+                          Math.abs(zv.x - vertex.x) < 0.01 && Math.abs(zv.y - vertex.y) < 0.01) {
+                        return true;
+                      }
+                      
+                      return false;
+                    });
+                    
+                    if (found) {
+                      console.log(`Vertex ${vertex.name} is part of zone ${zone.name}`);
+                    }
+                    return found;
+                  });
+                  
+                  if (!isPartOfZone) {
+                    locations.set(vertex.name, {
+                      name: vertex.name,
+                      level: vertexLevel,
+                      isZone: false
+                    });
+                  }
+                }
+              }
+            });
+          }
+        });
+        
+        // Add zones (only if fleet matches or no fleet filter)
+        if (node.rmfData.zones) {
+          node.rmfData.zones.forEach(zone => {
+            if (zone.name && zone.name.trim() !== '') {
+              const zoneLevel = zone.level || 'L1';
+              if (!selectedLevel || zoneLevel === selectedLevel) {
+                // Check if zone belongs to selected fleet
+                let zoneMatchesFleet = true;
+                if (selectedFleet) {
+                  if (zone.fleets) {
+                    // New multi-fleet format
+                    zoneMatchesFleet = zone.fleets.includes(selectedFleet);
+                  } else if (zone.fleet) {
+                    // Legacy single fleet format
+                    zoneMatchesFleet = zone.fleet === selectedFleet;
+                  }
+                }
+                
+                if (zoneMatchesFleet) {
+                  locations.set(zone.name, {
+                    name: zone.name,
+                    level: zoneLevel,
+                    isZone: true
+                  });
+                }
+              }
+            }
+          });
+        }
+        
+        // Populate dropdown
+        Array.from(locations.values()).sort((a, b) => a.name.localeCompare(b.name)).forEach(loc => {
+          const type = loc.isZone ? ' (Zone)' : '';
+          select.append(`<option value="${loc.name}" data-is-zone="${loc.isZone}">${loc.name}${type}</option>`);
+        });
+        
+        select.val(currentValue || '');
+        console.log('Populated', locations.size, 'locations');
+      }
+      
+      // SIMPLIFIED: Event handlers with clear responsibilities
+      function setupEventHandlers() {
+        // Robot selection: auto-select fleet, refresh locations
+        $('#node-input-robot_name').off('change').on('change', function() {
+          const robotName = $(this).val();
+          if (robotName) {
+            const robot = node.rmfData.robots.find(r => r.name === robotName);
+            if (robot) {
+              $('#node-input-robot_fleet').val(robot.fleet);
+              populateLocationDropdown();
+            }
+          } else {
+            $('#node-input-robot_fleet').val('');
+            // Don't refresh locations when "Use msg..." is selected to avoid flickering
+          }
+          updateZoneFields();
+        });
+        
+        // Fleet selection: validate robot, refresh locations
+        $('#node-input-robot_fleet').off('change').on('change', function() {
+          const fleetName = $(this).val();
+          const robotName = $('#node-input-robot_name').val();
+          
+          console.log('Fleet changed to:', fleetName || '(Use msg)');
+          
+          // If robot doesn't belong to selected fleet, clear it
+          if (robotName && fleetName) {
+            const robot = node.rmfData.robots.find(r => r.name === robotName);
+            if (robot && robot.fleet !== fleetName) {
+              $('#node-input-robot_name').val('');
+            }
+          }
+          
+          populateLocationDropdown();
+          updateZoneFields();
+        });
+        
+        // Location selection: update zone fields
+        $('#node-input-location_name').off('change').on('change', function() {
+          updateZoneFields();
+        });
+        
+        // Level selection: refresh locations
+        $('#node-input-location_level').off('change').on('change', function() {
+          populateLocationDropdown();
+          updateZoneFields();
+        });
+        
+        // Refresh button
+        $('#refresh-rmf-data').off('click').on('click', function() {
+          const button = $(this);
+          button.prop('disabled', true).text('Refreshing...');
+          
+          loadRMFData().then(() => {
+            populateAllDropdowns();
+            button.prop('disabled', false).html('<i class="fa fa-refresh"></i> Refresh Data');
+          });
+        });
+      }
+      
+      // SIMPLIFIED: Zone field management
+      function updateZoneFields() {
+        const locationName = $('#node-input-location_name').val();
+        const selectedOption = $('#node-input-location_name option:selected');
+        const isZone = selectedOption.data('is-zone') === true;
+        
+        const zoneTypeRow = $('#node-input-zone_type').closest('.form-row');
+        const zoneWaypointsRow = $('#zone-preferred-waypoints-container').closest('.form-row');
+        const zoneFinalFacingRow = $('#node-input-zone_final_facing').closest('.form-row');
+        
+        if (isZone && locationName) {
+          zoneTypeRow.show();
+          zoneWaypointsRow.show();
+          zoneFinalFacingRow.show();
+          populateZoneTypeDropdown(locationName);
+          populateZoneWaypointsInterface(locationName);
+        } else {
+          zoneTypeRow.hide();
+          zoneWaypointsRow.hide();
+          zoneFinalFacingRow.hide();
+          $('#node-input-zone_type').val(['all']);
+          $('#node-input-zone_final_facing').val('');
+          // Clear waypoints interface
+          $('.available-waypoints').empty();
+          $('.selected-waypoints').empty();
+        }
+      }
+      
+      function populateZoneTypeDropdown(zoneName) {
+        const select = $('#node-input-zone_type');
+        const currentValue = select.val();
+        
+        select.empty();
+        
+        // Find the zone data
+        const zone = node.rmfData.zones ? node.rmfData.zones.find(z => z.name === zoneName) : null;
+        
+        if (zone) {
+          const zoneVertices = getZoneVertices(zone);
+          
+          // Extract placement types from zone vertices and map to zone types
+          const placementBasedTypes = [];
+          zoneVertices.forEach(vertex => {
+            if (vertex.placement) {
+              // Map waypoint placement to zone type
+              const zoneType = PLACEMENT_TO_ZONE_TYPE[vertex.placement] || vertex.placement;
+              if (zoneType && zoneType !== 'default') {
+                placementBasedTypes.push(zoneType);
+              }
+            }
+          });
+          
+          // Remove duplicates from placement-based types
+          const uniquePlacementTypes = [...new Set(placementBasedTypes)];
+          
+          // Add special zone types that are not placement-based
+          const specialZoneTypes = ['human_facing'];
+          
+          // Combine placement-based types with special types, avoiding duplicates
+          const allAvailableTypes = [...uniquePlacementTypes];
+          specialZoneTypes.forEach(specialType => {
+            if (!allAvailableTypes.includes(specialType)) {
+              allAvailableTypes.push(specialType);
+            }
+          });
+          
+          // Always add "All" option first
+          select.append('<option value="all" selected>All</option>');
+          
+          // Add placement and special options
+          allAvailableTypes.forEach(zoneType => {
+            const label = PLACEMENT_LABELS[zoneType] || zoneType;
+            select.append(`<option value="${zoneType}">${label}</option>`);
+          });
+          
+          // If no types found, add fallback options
+          if (allAvailableTypes.length === 0) {
+            select.append('<option value="center">Center</option>');
+            select.append('<option value="left">Left</option>');
+            select.append('<option value="right">Right</option>');
+          }
+        } else {
+          // Fallback zone types when no zone data available
+          select.append('<option value="all" selected>All</option>');
+          select.append('<option value="center">Center</option>');
+          select.append('<option value="left">Left</option>');
+          select.append('<option value="right">Right</option>');
+          select.append('<option value="top">Top</option>');
+          select.append('<option value="bottom">Bottom</option>');
+          select.append('<option value="human_facing">Human Facing</option>');
+        }
+        
+        // Handle zone types selection logic with mutual exclusivity
+        let previousSelection = ['all']; // Track previous selection
+        
+        select.off('change').on('change', function() {
+          const selectedValues = $(this).val() || [];
+          const allSelected = selectedValues.includes('all');
+          const othersSelected = selectedValues.filter(v => v !== 'all');
+          
+          if (allSelected && othersSelected.length > 0) {
+            // Both 'all' and others are selected, determine which was added
+            const wasAllPreviouslySelected = previousSelection.includes('all');
+            
+            if (!wasAllPreviouslySelected) {
+              // 'all' was just selected, unselect all others
+              $(this).val(['all']);
+              previousSelection = ['all'];
+            } else {
+              // Another option was just selected, unselect 'all'
+              $(this).val(othersSelected);
+              previousSelection = othersSelected;
+            }
+          } else if (selectedValues.length === 0) {
+            // If nothing is selected, default to 'all'
+            $(this).val(['all']);
+            previousSelection = ['all'];
+          } else {
+            // Valid selection, update previous
+            previousSelection = selectedValues.slice();
+          }
+        });
+        
+        // Restore previous value
+        if (Array.isArray(currentValue)) {
+          select.val(currentValue);
+          previousSelection = currentValue.slice();
+        } else if (currentValue) {
+          select.val([currentValue]);
+          previousSelection = [currentValue];
+        } else {
+          select.val(Array.isArray(node.zone_type) ? node.zone_type : [node.zone_type || 'all']);
+          previousSelection = Array.isArray(node.zone_type) ? node.zone_type.slice() : [node.zone_type || 'all'];
+        }
+      }
+      
+      function populateZoneWaypointsInterface(zoneName) {
+        const availableContainer = $('.available-waypoints');
+        const selectedContainer = $('.selected-waypoints');
+        
+        availableContainer.empty();
+        selectedContainer.empty();
+        
+        // Find the zone data
+        const zone = node.rmfData.zones ? node.rmfData.zones.find(z => z.name === zoneName) : null;
+        
+        if (zone) {
+          console.log('Zone data for', zoneName, ':', zone);
+          
+          const zoneVertices = getZoneVertices(zone);
+          console.log('Zone vertices:', zoneVertices);
+          
+          if (zoneVertices.length > 0) {
+            zoneVertices.forEach((vertex, index) => {
+              let vertexName, displayName, vertexValue;
+              
+              // Handle different zone vertex structures
+              if (typeof vertex === 'object' && vertex.name) {
+                // Vertex object with name
+                vertexName = vertex.name;
+                vertexValue = vertex.name;
+                displayName = vertexName;
+              } else if (typeof vertex === 'number') {
+                // Vertex index - find corresponding vertex name from navGraphs
+                const graph = node.rmfData.navGraphs ? node.rmfData.navGraphs.find(g => 
+                  g.name === zone.graph || g.vertices.length > vertex
+                ) : null;
+                
+                if (graph && graph.vertices[vertex]) {
+                  vertexName = graph.vertices[vertex].name || `Vertex ${vertex}`;
+                  vertexValue = vertexName;
+                  displayName = `${vertexName} (Position ${index + 1})`;
+                } else {
+                  vertexName = `Vertex ${vertex}`;
+                  vertexValue = `vertex_${vertex}`;
+                  displayName = `Position ${index + 1} (Index ${vertex})`;
+                }
+              } else {
+                // Fallback for other structures
+                vertexName = `Position ${index + 1}`;
+                vertexValue = `vertex_${index}`;
+                displayName = vertexName;
+              }
+              
+              // Create available waypoint item
+              const availableItem = $(`
+                <div class="available-waypoint-item" data-waypoint="${vertexValue}" style="
+                  padding: 5px; 
+                  margin: 2px 0; 
+                  background: white; 
+                  border: 1px solid #ddd; 
+                  cursor: pointer;
+                  border-radius: 3px;
+                  font-size: 11px;
+                ">
+                  <span style="color: #333;">${displayName}</span>
+                </div>
+              `);
+              
+              availableContainer.append(availableItem);
+              
+              // Handle click to add to selected
+              availableItem.on('click', function() {
+                const waypointValue = $(this).data('waypoint');
+                addToSelectedWaypoints(waypointValue, displayName, selectedContainer, availableContainer);
+              });
+            });
+            
+            // Make selected waypoints sortable (fallback if jQuery UI not available)
+            try {
+              selectedContainer.sortable({
+                items: '.selected-waypoint-item',
+                placeholder: 'waypoint-placeholder',
+                tolerance: 'pointer',
+                cursor: 'move'
+              });
+            } catch (e) {
+              console.log('jQuery UI sortable not available, using basic ordering');
+            }
+          }
+        }
+        
+        // Restore saved waypoints
+        if (node.zone_preferred_waypoints && Array.isArray(node.zone_preferred_waypoints)) {
+          setTimeout(() => {
+            node.zone_preferred_waypoints.forEach(waypointData => {
+              let waypointName, orientation;
+              
+              if (typeof waypointData === 'string') {
+                waypointName = waypointData;
+                orientation = undefined;
+              } else if (waypointData.waypoint) {
+                waypointName = waypointData.waypoint;
+                orientation = waypointData.orientation;
+              }
+              
+              if (waypointName) {
+                const availableItem = availableContainer.find(`[data-waypoint="${waypointName}"]`);
+                
+                if (availableItem.length > 0) {
+                  // Find the display name from available item
+                  const displayName = availableItem.find('span').text();
+                  
+                  // Add to selected
+                  addToSelectedWaypoints(waypointName, displayName, selectedContainer, availableContainer);
+                  
+                  // Set orientation if provided
+                  if (orientation !== undefined) {
+                    const selectedItem = selectedContainer.find(`[data-waypoint="${waypointName}"]`);
+                    selectedItem.find('.waypoint-orientation').val(orientation);
+                  }
+                }
+              }
+            });
+          }, 50);
+        }
+        
+        // Function to add waypoint to selected list
+        function addToSelectedWaypoints(waypointValue, displayName, selectedContainer, availableContainer) {
+          // Check if already selected
+          if (selectedContainer.find(`[data-waypoint="${waypointValue}"]`).length > 0) {
+            return;
+          }
+          
+          const selectedItem = $(`
+            <div class="selected-waypoint-item" data-waypoint="${waypointValue}" style="
+              padding: 5px; 
+              margin: 2px 0; 
+              background: #e3f2fd; 
+              border: 1px solid #1976d2; 
+              border-radius: 3px;
+              font-size: 11px;
+              cursor: move;
+              display: flex;
+              align-items: center;
+              gap: 5px;
+            ">
+              <span class="drag-handle" style="cursor: ns-resize; color: #666; font-weight: bold;">⋮⋮</span>
+              <span style="flex: 1; color: #1565c0;">${displayName}</span>
+              <input type="number" class="waypoint-orientation" step="0.01" placeholder="orient." style="width: 50px; font-size: 10px;" title="Orientation in radians">
+              <button type="button" class="move-up" style="
+                background: #4caf50; 
+                color: white; 
+                border: none; 
+                border-radius: 2px; 
+                width: 16px; 
+                height: 16px; 
+                font-size: 10px; 
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+              " title="Move up">↑</button>
+              <button type="button" class="move-down" style="
+                background: #ff9800; 
+                color: white; 
+                border: none; 
+                border-radius: 2px; 
+                width: 16px; 
+                height: 16px; 
+                font-size: 10px; 
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+              " title="Move down">↓</button>
+              <button type="button" class="remove-waypoint" style="
+                background: #d32f2f; 
+                color: white; 
+                border: none; 
+                border-radius: 2px; 
+                width: 16px; 
+                height: 16px; 
+                font-size: 10px; 
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+              " title="Remove waypoint">×</button>
+            </div>
+          `);
+          
+          selectedContainer.append(selectedItem);
+          
+          // Hide from available list
+          availableContainer.find(`[data-waypoint="${waypointValue}"]`).hide();
+          
+          // Handle move up button
+          selectedItem.find('.move-up').on('click', function(e) {
+            e.stopPropagation();
+            const prev = selectedItem.prev('.selected-waypoint-item');
+            if (prev.length > 0) {
+              selectedItem.insertBefore(prev);
+            }
+          });
+          
+          // Handle move down button
+          selectedItem.find('.move-down').on('click', function(e) {
+            e.stopPropagation();
+            const next = selectedItem.next('.selected-waypoint-item');
+            if (next.length > 0) {
+              selectedItem.insertAfter(next);
+            }
+          });
+          
+          // Handle remove button
+          selectedItem.find('.remove-waypoint').on('click', function(e) {
+            e.stopPropagation();
+            selectedItem.remove();
+            // Show back in available list
+            availableContainer.find(`[data-waypoint="${waypointValue}"]`).show();
+          });
+        }
+      }
+      
+      // Helper functions
+      function getZoneVertices(zone) {
+        return zone.vertices || zone.zone_vertices || [];
+      }
+      
+      function getVertexLevel(vertex) {
+        if (vertex.params && vertex.params.length > 0) {
+          const mapNameParam = vertex.params.find(p => p.name === 'map_name');
+          if (mapNameParam && mapNameParam.value_string) {
+            return mapNameParam.value_string;
+          }
+        }
+        return 'L1'; // Default level
+      }
+      
+      function showStatus(data) {
+        // Remove any existing status message
+        $('.rmf-data-status').remove();
+        
+        let message = '';
+        let type = 'info';
+        
+        if (data.status === 'not_initialized') {
+          message = 'RMF not initialized. Deploy RMF Config node first.';
+          type = 'warning';
+        } else if (data.status === 'error') {
+          message = 'Error loading RMF data: ' + (data.message || 'Unknown error');
+          type = 'error';
+        } else if ((data.robots?.length || 0) === 0 && (data.locations?.length || 0) === 0) {
+          message = 'No RMF data available. Check RMF system status.';
+          type = 'warning';
+        } else {
+          const robotCount = data.robots?.length || 0;
+          const locationCount = data.locations?.length || 0;
+          const zoneCount = data.zones?.length || 0;
+          const navGraphCount = data.navGraphs?.length || 0;
+          message = `Loaded ${robotCount} robots, ${locationCount} locations, ${zoneCount} zones, ${navGraphCount} navGraphs`;
+          type = 'success';
+        }
+        
+        const statusColors = {
+          'success': '#5cb85c',
+          'warning': '#f0ad4e', 
+          'error': '#d9534f',
+          'info': '#5bc0de'
+        };
+        
+        const statusHtml = `
+          <div class="rmf-data-status" style="
+            margin: 10px 0; 
+            padding: 8px 12px; 
+            border-radius: 4px; 
+            background-color: ${statusColors[type]}20; 
+            border-left: 4px solid ${statusColors[type]}; 
+            font-size: 12px;
+            color: #333;
+          ">
+            <i class="fa fa-${type === 'success' ? 'check' : type === 'warning' ? 'exclamation-triangle' : type === 'error' ? 'times' : 'info'}-circle" style="color: ${statusColors[type]}; margin-right: 6px;"></i>
+            ${message}
+          </div>
+        `;
+        
+        $('#refresh-rmf-data').parent().after(statusHtml);
+      }
+    },
+    oneditsave: function() {
+      // Validation
+      const locationValue = $('#node-input-location_name').val();
+      
+      if (!locationValue) {
+        RED.notify('Location is required (select a location or use "Use msg.location_name")', 'error');
+        return false;
+      }
+      
+      // Collect zone waypoints data
+      const selectedWaypoints = [];
+      $('.selected-waypoint-item').each(function() {
+        const waypointName = $(this).data('waypoint');
+        const orientationInput = $(this).find('.waypoint-orientation');
+        const orientation = orientationInput.val();
+        
+        if (orientation && orientation.trim()) {
+          // Create waypoint object with orientation
+          selectedWaypoints.push({
+            waypoint: waypointName,
+            orientation: parseFloat(orientation)
+          });
+        } else {
+          // Create waypoint object without orientation
+          selectedWaypoints.push({ waypoint: waypointName });
+        }
+      });
+      
+      // Save the waypoints data
+      this.zone_preferred_waypoints = selectedWaypoints;
+      
+      // Save the zone types data (from multi-select)
+      const selectedZoneTypes = $('#node-input-zone_type').val();
+      this.zone_type = selectedZoneTypes || ['all'];
+      
+      // Save the zone final facing
+      this.zone_final_facing = $('#node-input-zone_final_facing').val();
+      
+      return true;
+    }
+  });
+</script>
+
+<script type="text/html" data-template-name="goto-place">
+  <div class="form-row">
+    <label for="node-input-name">Name</label>
+    <input type="text" id="node-input-name">
+  </div>
+  <div class="form-row">
+    <label for="node-input-config"><i class="fa fa-cogs"></i> RMF Config</label>
+    <input type="text" id="node-input-config" style="width: 60%;">
+    <button type="button" id="refresh-rmf-data" class="red-ui-button" style="margin-left: 10px; width: auto;">
+      <i class="fa fa-refresh"></i> Refresh Data
+    </button>
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-robot_name">Robot Name</label>
+    <select id="node-input-robot_name" style="width: 100%;">
+      <option value="">Use msg.rmf_robot_name</option>
+    </select>
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-robot_fleet">Robot Fleet</label>
+    <select id="node-input-robot_fleet" style="width: 100%;">
+      <option value="">Use msg.rmf_robot_fleet</option>
+    </select>
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-location_name">Location Name <span style="color: red;">*</span></label>
+    <select id="node-input-location_name" style="width: 100%;">
+      <option value="">Use msg.location_name</option>
+    </select>
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-zone_type">Zone Types</label>
+    <select id="node-input-zone_type" multiple style="width: 100%; height: 80px;">
+      <option value="all" selected>All</option>
+      <option value="left">Left</option>
+      <option value="right">Right</option>
+      <option value="center">Center</option>
+      <option value="top">Top</option>
+      <option value="bottom">Bottom</option>
+      <option value="human_facing">Human Facing</option>
+    </select>
+    <div class="form-tips">Hold Ctrl/Cmd to select multiple zone entry types. 'All' is mutually exclusive with other selections.</div>
+  </div>
+  
+  <div class="form-row">
+    <label>Zone Preferred Waypoints</label>
+    <div id="zone-preferred-waypoints-container" style="border: 1px solid #ddd; padding: 10px; max-height: 300px; overflow-y: auto;">
+      <div class="form-tips" style="margin-bottom: 10px;">Select waypoints from available list. Drag selected waypoints to reorder priority (top = highest priority).</div>
+      
+      <div style="display: flex; gap: 10px;">
+        <!-- Available waypoints -->
+        <div style="flex: 1;">
+          <h4 style="margin: 0 0 5px 0; font-size: 12px; color: #666;">Available Waypoints</h4>
+          <div class="available-waypoints" style="border: 1px solid #eee; padding: 5px; min-height: 100px; max-height: 150px; overflow-y: auto; background: #fafafa;">
+            <!-- Available waypoints will be populated here -->
+          </div>
+        </div>
+        
+        <!-- Selected waypoints (ordered) -->
+        <div style="flex: 1;">
+          <h4 style="margin: 0 0 5px 0; font-size: 12px; color: #666;">Selected Waypoints (Priority Order)</h4>
+          <div class="selected-waypoints" style="border: 1px solid #eee; padding: 5px; min-height: 100px; max-height: 150px; overflow-y: auto; background: #f0f8ff;">
+            <!-- Selected waypoints will be shown here in order -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-zone_final_facing">Zone Final Facing (radians)</label>
+    <input type="number" id="node-input-zone_final_facing" min="-6.28" max="6.28" step="0.01" style="width: 100%;" placeholder="Optional: Final facing angle in radians">
+    <div class="form-tips">Set the final facing direction (in radians) when the robot reaches the zone. Leave empty to use default facing.</div>
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-stubborn_period">Stubborn Period (seconds)</label>
+    <input type="number" id="node-input-stubborn_period" min="0" step="0.1" style="width: 100%;">
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-parallel_behaviour">Parallel Behaviour</label>
+    <select id="node-input-parallel_behaviour" style="width: 100%;">
+      <option value="ignore">Ignore</option>
+      <option value="overwrite">Overwrite</option>
+    </select>
+    <div class="form-tips">How to handle new requests when robot is already executing a dynamic event. <strong>Ignore:</strong> Discard new request, let current task continue. <strong>Overwrite:</strong> Cancel current task and start new one.</div>
+  </div>
+  
+  <div class="form-tips">
+    <b>Purpose:</b><br/>
+    Sends a robot to a specific location using dynamic events. This node should be connected after a start-task node.<br/><br/>
+    
+    <b>Setup Requirements:</b><br/>
+    • Connect this node after a start-task node<br/>
+    • Deploy and connect an RMF Config node first<br/>
+    • Refresh data to populate dropdowns<br/><br/>
+    
+    <b>Configuration Options:</b><br/>
+    <dt>Robot Name</dt>
+    <dd>The name of the robot to command (optional). Auto-populates fleet when selected, or use "Use msg.rmf_robot_name" to pass via message. Usually passed from start-task node.</dd>
+    
+    <dt>Robot Fleet</dt>
+    <dd>The fleet the robot belongs to (optional). Auto-selected when robot is chosen, or use "Use msg.rmf_robot_fleet" to pass via message. Usually passed from start-task node.</dd>
+    
+    <dt>Location Name</dt>
+    <dd>The destination location or zone name. Locations from nav graphs and zones are shown. Use "Use msg.location_name" to pass via message.</dd>
+    
+    <dt>Zone Types</dt>
+    <dd>For zone locations, specifies the placements within the zone (All, Left, Right, Center, Top, Bottom, Human Facing, etc.). Multi-select with 'All' being mutually exclusive with other options. Only visible when a zone is selected.</dd>
+    
+    <dt>Zone Preferred Waypoints</dt>
+    <dd>For zone locations, allows selection and ordering of multiple waypoints within the zone with individual orientations. Use drag-and-drop or buttons to reorder priority. Only visible when a zone is selected.</dd>
+    
+    <dt>Stubborn Period</dt>
+    <dd>Time in seconds that the robot will attempt to reach the location before giving up (default: 0 = no limit).</dd>
+    
+    <dt>Parallel Behaviour</dt>
+    <dd>How to handle overlapping goto requests: "abort" cancels previous request, "overwrite" replaces it.</dd>
+  </div>
+</script>
+
+<script type="text/html" data-help-name="goto-place">
+  <p>Sends a robot to a specific location using RMF dynamic events.</p>
+  
+  <h3>Inputs</h3>
+  <dl class="message-properties">
+    <dt>msg.rmf_robot_name <span class="property-type">string</span></dt>
+    <dd>The name of the robot to command. Overrides node configuration if provided.</dd>
+    
+    <dt>msg.rmf_robot_fleet <span class="property-type">string</span></dt>
+    <dd>The fleet the robot belongs to. Overrides node configuration if provided.</dd>
+    
+    <dt>msg.location_name <span class="property-type">string</span></dt>
+    <dd>The destination location name. Overrides node configuration if provided.</dd>
+    
+    <dt>msg.zone_type <span class="property-type">array</span></dt>
+    <dd>For zone locations, the placement types (e.g., ["left", "center"] or ["all"]).</dd>
+    
+    <dt>msg.zone_preferred_waypoints <span class="property-type">array</span></dt>
+    <dd>For zone locations, array of waypoint objects with optional orientations (e.g., [{waypoint: "wp1", orientation: 1.57}, {waypoint: "wp2"}]).</dd>
+    
+    <dt>msg.zone_final_facing <span class="property-type">number</span></dt>
+    <dd>For zone locations, the final facing direction in radians when the robot reaches the zone.</dd>
+    
+    <dt class="optional">msg.robot_name <span class="property-type">string</span></dt>
+    <dd>Legacy alias for msg.rmf_robot_name.</dd>
+    
+    <dt class="optional">msg.robot_fleet <span class="property-type">string</span></dt>
+    <dd>Legacy alias for msg.rmf_robot_fleet.</dd>
+  </dl>
+  
+  <h3>Outputs</h3>
+  <ol class="node-ports">
+    <li>Success
+      <dl class="message-properties">
+        <dt>payload <span class="property-type">object</span></dt>
+        <dd>Success response from RMF system with task details.</dd>
+      </dl>
+    </li>
+    <li>Failed
+      <dl class="message-properties">
+        <dt>payload <span class="property-type">object</span></dt>
+        <dd>Error response when goto task fails.</dd>
+      </dl>
+    </li>
+    <li>Status
+      <dl class="message-properties">
+        <dt>payload <span class="property-type">object</span></dt>
+        <dd>Ongoing status updates during task execution.</dd>
+      </dl>
+    </li>
+  </ol>
+  
+  <h3>Details</h3>
+  <p>This node sends a goto command to move a robot to a specified location. It supports both regular waypoint locations and zone locations with placement options.</p>
+  
+  <p><b>Zone Support:</b> When a zone is selected, additional options appear for zone types (multi-select placement) and preferred waypoint selection with priority ordering and individual orientations. Zones provide flexible positioning within defined areas.</p>
+  
+  <p><b>Fleet Integration:</b> The node automatically filters locations based on the selected robot fleet, ensuring only accessible locations are shown.</p>
+  
+  <p><b>Dynamic Configuration:</b> All parameters can be set via incoming messages, allowing for dynamic robot navigation based on runtime conditions.</p>
+</script>

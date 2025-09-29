@@ -1,25 +1,64 @@
 {
   "name": "@chart/node-red-rmf",
   "version": "1.0.0",
-  "description": "CHART's Node-RED RMF Nodes",
+  "description": "RMF (Robot Middleware Framework) nodes for Node-RED with SharedManager architecture.",
   "license": "ISC",
-  "author": "CHART",
+  "author": {
+    "name": "CHART",
+    "url": "https://github.com/chart-sg"
+  },
   "type": "commonjs",
   "main": "index.js",
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "os": [
+    "!win32"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chart-sg/node-red-rmf.git"
+  },
+  "bugs": {
+    "url": "https://github.com/chart-sg/node-red-rmf/issues"
+  },
+  "homepage": "https://github.com/chart-sg/node-red-rmf#readme",
   "keywords": [
     "node-red",
     "rmf",
-    "chart"
+    "robot-middleware-framework",
+    "chart",
+    "robotics",
+    "fleet-management",
+    "ros2"
   ],
+  "dependencies": {
+    "@chart/node-red-ros2-manager": "^1.0.0",
+    "axios": "^1.10.0",
+    "socket.io-client": "^4.0.0"
+  },
   "node-red": {
     "version": ">=1.3.0",
     "nodes": {
-      "test-node": "nodes/test-node.js"
+      "test-node": "nodes/test-node.js",
+      "rmf-config": "nodes/rmf-config/rmf-config.js",
+      "start-task": "nodes/start-task/start-task.js",
+      "start-taskV2": "nodes/start-taskV2/start-taskV2.js",
+      "goto-place": "nodes/goto-place/goto-place.js",
+      "perform-action": "nodes/perform-action/perform-action.js",
+      "teleop": "nodes/teleop/teleop.js",
+      "cancel-task": "nodes/cancel-task/cancel-task.js",
+      "cancel-taskV2": "nodes/cancel-taskV2/cancel-taskV2.js",
+      "end-task": "nodes/end-task/end-task.js"
     }
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "echo \"No tests yet\" && exit 0",
+    "lint": "echo \"No linting yet\" && exit 0", 
     "validate": "node scripts/validate-subflows.js",
-    "add-subflow": "node scripts/add-subflow.js"
+    "add-subflow": "node scripts/add-subflow.js",
+    "check-rmf": "node scripts/check-rmf-environment.js",
+    "postinstall": "echo '\n🤖 RMF Node-RED package installed!\n\n⚠️  IMPORTANT: RMF nodes require proper ROS2 environment setup.\n\n🔧 Quick Setup:\n   1. Download setup script: curl -O https://raw.githubusercontent.com/chart-sg/node-red-rmf/main/setup-rmf-nodes.sh\n   2. Source ROS2: source /opt/ros/jazzy/setup.bash\n   3. Source RMF: source ~/rmf_ws/install/setup.bash\n   4. Run setup: cd ~/.node-red && bash setup-rmf-nodes.sh\n\n💡 After setup, restart Node-RED with sourced environment.\n📚 See README for detailed instructions.\n'",
+    "prepublishOnly": "npm run test && npm run lint && npm run validate"
   }
 }

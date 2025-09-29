@@ -1,23 +1,102 @@
 # CHART Node-RED RMF Nodes
 
-A collection of Node-RED subflow modules for RMF (Robot Middleware Framework) integration.
+A collection of Node-RED subflow modules for RMF (Robot Middleware Framework) integration, built on the Chart SharedManager architecture for reliable multi-plugin ROS2 operations.
 
 ## Overview
 
 This package provides reusable Node-RED subflows designed for RMF applications. Each subflow is packaged as a proper Node-RED module that can be easily installed and used in Node-RED flows.
 
-## Installation
+### Key Features
 
-### From npm (when published)
-```bash
-npm install @chart/node-red-rmf
-```
+- **SharedManager Integration**: Built-in `@chart/node-red-ros2-manager` for reliable ROS2 operations
+- **RMF-Specific Nodes**: Fleet management, task dispatch, and coordination nodes
+- **Multi-Plugin Compatible**: Works alongside `@chart/node-red-ros2` and other Chart ROS2 plugins
+- **Production Ready**: No spinning conflicts, proper resource management
 
-### Local Development
+## Quick Installation
+
 ```bash
+# 1. Source ROS2/RMF environment
+source /opt/ros/jazzy/setup.bash        # (or your ROS2 distro)
+source ~/rmf_ws/install/setup.bash      # (your RMF workspace)
+
+# 2. Install in Node-RED directory (with .tgz files)
 cd ~/.node-red
-npm install /path/to/node-red-chart-rmf
+npm install rclnodejs
+npm install ./chart-node-red-ros2-manager-1.0.0.tgz
+npm install ./chart-node-red-rmf-1.0.0.tgz
 ```
+
+**Complete Installation Guide** - Multiple methods, troubleshooting, development setup: [INSTALLATION.md](./INSTALLATION.md)
+
+## Prerequisites & Environment Setup
+
+This package requires a properly configured ROS2 and RMF environment:
+
+### Required Environment
+- **ROS2 Jazzy** (or compatible version)
+- **RMF Workspace** with required message packages
+- **rclnodejs** with RMF message type generation
+
+### Environment Check
+After installation, verify your environment is ready:
+
+```bash
+# Check RMF environment setup
+npm run check-rmf
+```
+
+This will verify:
+- ROS2 environment is sourced
+- RMF packages are available (`rmf_building_map_msgs`, `rmf_task_msgs`, etc.)
+- rclnodejs has generated RMF message types
+
+### Quick Setup Guide
+If the environment check fails:
+
+```bash
+# 1. Source your ROS2 environment
+source /opt/ros/jazzy/setup.bash
+
+# 2. Source your RMF workspace  
+source ~/rmf2A_ws/install/setup.bash
+
+# 3. Restart Node-RED to regenerate message types
+# (rclnodejs will automatically generate RMF message types on startup)
+
+# 4. Verify environment
+npm run check-rmf
+```
+
+### Troubleshooting
+- **Missing RMF message types**: Ensure RMF workspace is sourced before starting Node-RED
+- **rclnodejs generation issues**: Delete `~/.node-red/node_modules/rclnodejs/generated/` and restart Node-RED
+- **Package not found errors**: Verify RMF packages with `ros2 pkg list | grep rmf`
+
+## Architecture
+
+This package uses the **Chart SharedManager** architecture for conflict-free ROS2 integration:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                @chart/node-red-ros2-manager                 │
+│              (Shared ROS2 Context Manager)                 │
+└─────────────────────┬───────────────────────────────────────┘
+                      │
+          ┌───────────┴──────────┐
+          │                      │
+┌─────────▼──────────┐  ┌────────▼─────────┐
+│ @chart/node-red-   │  │ @chart/node-red- │
+│ ros2               │  │ rmf              │
+│ (Educational)      │  │ (Production)     │
+└────────────────────┘  └──────────────────┘
+```
+
+### Benefits:
+- **No ActionClient spinning conflicts** - SafeActionClient pattern
+- **Multi-plugin compatibility** - shared ROS2 context across all Chart plugins
+- **Production reliability** - proper resource management and error recovery
+- **RMF-specific optimizations** - fleet coordination and task management
 
 ## Available Nodes
 
@@ -25,6 +104,22 @@ npm install /path/to/node-red-chart-rmf
 - **Category**: RMF
 - **Function**: A simple test node that demonstrates the subflow structure
 - **Configuration**: Message text (default: "hello-word")
+
+## Compatibility & Usage
+
+- **SharedManager Required**: This package requires the ros2-manager for all ROS2 operations
+- **Multi-Plugin**: Works seamlessly with `@chart/node-red-ros2` and other Chart ROS2 plugins
+- **Node-RED**: Hot deployment support, proper cleanup during redeployments
+- **Production Focus**: Designed for reliable fleet management and task coordination
+
+### Integration Example
+
+```javascript
+// All RMF nodes automatically use SharedManager
+const manager = require('@chart/node-red-ros2-manager');
+// Manager is initialized automatically by the nodes
+// No manual setup required for users
+```
 
 ## Development
 
@@ -79,12 +174,12 @@ The script handles both:
 ### Validation
 
 The validation script checks:
-- ✅ All JSON files are valid subflows
-- ✅ Each subflow has required properties (id, name, flow)
-- ✅ No duplicate IDs
-- ✅ Corresponding JS wrapper files exist
-- ✅ All nodes are registered in package.json
-- ✅ No orphaned files
+- All JSON files are valid subflows
+- Each subflow has required properties (id, name, flow)
+- No duplicate IDs
+- Corresponding JS wrapper files exist
+- All nodes are registered in package.json
+- No orphaned files
 
 ### Testing Locally
 
@@ -103,8 +198,15 @@ npm install . --prefix ~/.node-red
 
 ## Dependencies
 
+- **@chart/node-red-ros2-manager** - Shared ROS2 context management (automatically installed)
+- **rclnodejs** - ROS2 Node.js bindings (automatically installed)
 - Node-RED >= 1.3.0 (for subflow module support)
 - Node.js >= 12.0.0
+
+## 🔗 Related Packages
+
+- [`@chart/node-red-ros2-manager`](https://github.com/chart-sg/node-red-ros2-manager) - Core ROS2 context manager
+- [`@chart/node-red-ros2`](https://github.com/chart-sg/node-red-ros2) - General ROS2 nodes for Node-RED
 
 ## License
 

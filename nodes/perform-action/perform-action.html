@@ -1,0 +1,337 @@
+<script type="text/javascript">
+  // Check if RMFFormUtils is already loaded to avoid duplicates
+  if (typeof window.RMFFormUtils === 'undefined') {
+    // Shared RMF Form Utilities - loaded once per page
+    window.RMFFormUtils = {
+      populateRobotDropdown: function(options = {}) {
+        const { node, selectId = 'node-input-robot_name', placeholder = 'Use msg.rmf_robot_name', valueProperty = 'robot_name' } = options;
+        const select = $(`#${selectId}`);
+        const currentValue = node.isLoaded ? select.val() : node[valueProperty];
+        
+        select.empty().append(`<option value="">${placeholder}</option>`);
+        
+        if (node.rmfData && node.rmfData.robots && node.rmfData.robots.length > 0) {
+          node.rmfData.robots.forEach(robot => {
+            select.append(`<option value="${robot.name}" data-fleet="${robot.fleet}">${robot.name} (${robot.fleet})</option>`);
+          });
+        }
+        
+        select.val(currentValue || '');
+      },
+
+      populateFleetDropdown: function(options = {}) {
+        const { node, selectId = 'node-input-robot_fleet', placeholder = 'Use msg.rmf_robot_fleet', valueProperty = 'robot_fleet' } = options;
+        const select = $(`#${selectId}`);
+        const currentValue = node.isLoaded ? select.val() : node[valueProperty];
+        
+        select.empty().append(`<option value="">${placeholder}</option>`);
+        
+        if (node.rmfData && node.rmfData.fleets && node.rmfData.fleets.length > 0) {
+          node.rmfData.fleets.forEach(fleet => {
+            select.append(`<option value="${fleet}">${fleet}</option>`);
+          });
+        }
+        
+        select.val(currentValue || '');
+      },
+
+      setupRobotFleetHandlers: function(options = {}) {
+        const { node, robotSelectId = 'node-input-robot_name', fleetSelectId = 'node-input-robot_fleet' } = options;
+        const robotSelect = $(`#${robotSelectId}`);
+        const fleetSelect = $(`#${fleetSelectId}`);
+
+        // Robot selection change handler
+        robotSelect.off('change').on('change', function() {
+          const selectedRobot = $(this).val();
+          const selectedOption = $(this).find('option:selected');
+          const robotFleet = selectedOption.data('fleet');
+          
+          if (selectedRobot && selectedRobot !== '' && robotFleet) {
+            fleetSelect.val(robotFleet);
+          } else {
+            fleetSelect.val('');
+          }
+        });
+
+        // Fleet selection change handler  
+        fleetSelect.off('change').on('change', function() {
+          const selectedFleet = $(this).val();
+          const currentRobot = robotSelect.val();
+          
+          if (currentRobot && selectedFleet && node.rmfData && node.rmfData.robots) {
+            const robot = node.rmfData.robots.find(r => r.name === currentRobot);
+            if (robot && robot.fleet !== selectedFleet) {
+              robotSelect.val('');
+            }
+          }
+          
+          // Filter robots by fleet
+          if (selectedFleet && selectedFleet !== '') {
+            robotSelect.empty().append('<option value="">Use msg.rmf_robot_name</option>');
+            if (node.rmfData && node.rmfData.robots) {
+              node.rmfData.robots.forEach(robot => {
+                if (robot.fleet === selectedFleet) {
+                  robotSelect.append(`<option value="${robot.name}" data-fleet="${robot.fleet}">${robot.name} (${robot.fleet})</option>`);
+                }
+              });
+            }
+            const robotFromFleet = node.rmfData.robots ? node.rmfData.robots.find(r => r.name === currentRobot && r.fleet === selectedFleet) : null;
+            if (robotFromFleet) {
+              robotSelect.val(currentRobot);
+            }
+          } else {
+            robotSelect.empty().append('<option value="">Use msg.rmf_robot_name</option>');
+            if (node.rmfData && node.rmfData.robots) {
+              node.rmfData.robots.forEach(robot => {
+                robotSelect.append(`<option value="${robot.name}" data-fleet="${robot.fleet}">${robot.name} (${robot.fleet})</option>`);
+              });
+            }
+            robotSelect.val(currentRobot);
+          }
+        });
+      },
+
+      showDataStatus: function(message, type = 'info', configSelectId = 'node-input-config') {
+        $('.rmf-data-status').remove();
+        let color = '#2196f3', icon = 'fa-info-circle';
+        if (type === 'error') { color = '#f44336'; icon = 'fa-exclamation-triangle'; }
+        else if (type === 'success') { color = '#4caf50'; icon = 'fa-check-circle'; }
+        const statusDiv = $(`<div class="rmf-data-status form-tips" style="color: ${color}; margin-top: 10px;"><i class="fa ${icon}" style="margin-right: 5px;"></i>${message}</div>`);
+        $(`#${configSelectId}`).closest('.form-row').after(statusDiv);
+      },
+
+      loadRMFData: async function(node) {
+        try {
+          $('.rmf-data-status').remove();
+          
+          const response = await $.get('/rmf/data');
+          
+          if (response && response.robots) {
+            node.rmfData.robots = response.robots;
+            node.rmfData.fleets = [...new Set(response.robots.map(r => r.fleet))];
+            
+            this.populateRobotDropdown({ node });
+            this.populateFleetDropdown({ node });
+            this.showDataStatus(`Loaded ${response.robots.length} robots`, 'success');
+          } else {
+            node.rmfData.robots = [];
+            node.rmfData.fleets = [];
+            this.populateRobotDropdown({ node });
+            this.populateFleetDropdown({ node });
+            this.showDataStatus('No robot data available', 'warning');
+          }
+          
+        } catch (error) {
+          console.error('Failed to load RMF data:', error);
+          node.rmfData.robots = [];
+          node.rmfData.fleets = [];
+          this.populateRobotDropdown({ node });
+          this.populateFleetDropdown({ node });
+          this.showDataStatus('Failed to load RMF data', 'error');
+        }
+      },
+
+      setupRefreshButton: function(node, buttonId = 'refresh-rmf-data') {
+        $(`#${buttonId}`).on('click', async () => {
+          const button = $(`#${buttonId}`);
+          const originalText = button.html();
+          
+          // Show loading state
+          button.html('<i class="fa fa-spinner fa-spin"></i> Loading...');
+          button.prop('disabled', true);
+          
+          try {
+            await this.loadRMFData(node);
+          } finally {
+            // Restore button
+            button.html(originalText);
+            button.prop('disabled', false);
+          }
+        });
+      }
+    };
+  }
+
+  RED.nodes.registerType('perform-action', {
+    category: 'RMF Dynamic Events',
+    color: '#6BB6FF',
+    defaults: {
+      name: { value: '' },
+      config: { type: 'rmf-config', required: true },
+      robot_name: { value: '' },
+      robot_fleet: { value: '' },
+      action_category: { value: '' },
+      action_description: { value: '' }
+    },
+    inputs: 1,
+    outputs: 2,
+    outputLabels: ["success", "failed"],
+    icon: 'rmf.svg',
+    label: function () {
+      return this.name || 'Perform-action';
+    },
+    paletteLabel: 'Perform-action',
+    oneditprepare: function() {
+      const node = this;
+      
+      // Initialize data storage
+      node.rmfData = { robots: [], fleets: [] };
+      
+      // Use shared RMF form utilities
+      if (typeof window.RMFFormUtils !== 'undefined') {
+        // Load RMF data
+        window.RMFFormUtils.loadRMFData(node);
+        
+        // Setup refresh button
+        window.RMFFormUtils.setupRefreshButton(node);
+        
+        // Setup robot/fleet handlers
+        window.RMFFormUtils.setupRobotFleetHandlers({ node });
+      } else {
+        console.warn('RMFFormUtils not available');
+      }
+    }
+  });
+</script>
+
+<script type="text/html" data-template-name="perform-action">
+  <div class="form-row">
+    <label for="node-input-name">Name</label>
+    <input type="text" id="node-input-name">
+  </div>
+  <div class="form-row">
+    <label for="node-input-config"><i class="fa fa-cogs"></i> RMF Config</label>
+    <input type="text" id="node-input-config" style="width: 60%;">
+    <button type="button" id="refresh-rmf-data" class="red-ui-button" style="margin-left: 10px; width: auto;">
+      <i class="fa fa-refresh"></i> Refresh Data
+    </button>
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-robot_name">Robot Name</label>
+    <select id="node-input-robot_name" style="width: 100%;">
+      <option value="">Use msg.rmf_robot_name</option>
+    </select>
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-robot_fleet">Robot Fleet</label>
+    <select id="node-input-robot_fleet" style="width: 100%;">
+      <option value="">Use msg.rmf_robot_fleet</option>
+    </select>
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-action_category">Action Category <span style="color: red;">*</span></label>
+    <input type="text" id="node-input-action_category" placeholder="e.g. teleop, clean, custom_action" style="width: 100%;">
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-action_description">Action Description</label>
+    <textarea id="node-input-action_description" placeholder="Optional action description or parameters as JSON string" rows="3" style="width: 100%;"></textarea>
+  </div>
+  
+  <div class="form-tips">
+    <b>Purpose:</b><br/>
+    Executes custom actions for robots using the perform_action event type. This node allows for open-ended action execution with user-defined categories and descriptions.<br/><br/>
+    
+    <b>Setup Requirements:</b><br/>
+    • Connect this node after a start-task node<br/>
+    • Deploy and connect an RMF Config node first<br/>
+    • Specify action category (required)<br/><br/>
+    
+    <b>Usage:</b><br/>
+    • Robot name and fleet can come from previous nodes via RMF metadata<br/>
+    • Action category defines the type of action to perform<br/>
+    • Action description provides additional parameters or details<br/>
+    • Use "Use msg.xxx" dropdown options to pass values via message properties<br/>
+    • Connect after start-task node for complete workflow: start-task → perform-action → end-task
+  </div>
+</script>
+
+<script type="text/html" data-help-name="perform-action">
+  <p>Executes custom actions for robots using the RMF perform_action event type. This node provides open-ended action execution capabilities.</p>
+  
+  <h3>Configuration</h3>
+  <dl class="message-properties">
+    <dt>Robot Name <span class="property-type">string</span></dt>
+    <dd>The name of the robot (optional). Select from dropdown or use "Use msg.rmf_robot_name" to pass via message. Usually passed from previous nodes via RMF metadata.</dd>
+    
+    <dt>Robot Fleet <span class="property-type">string</span></dt>
+    <dd>The fleet the robot belongs to (optional). Auto-selected when robot is chosen. Usually passed from previous nodes via RMF metadata.</dd>
+    
+    <dt>Action Category <span class="property-type">string</span></dt>
+    <dd>The category of action to perform (required). Examples: "teleop", "clean", "custom_action", etc.</dd>
+    
+    <dt>Action Description <span class="property-type">string</span></dt>
+    <dd>Optional description or parameters for the action. Can be a JSON string for complex parameters.</dd>
+  </dl>
+  
+  <h3>Inputs</h3>
+  <dl class="message-properties">
+    <dt>msg._rmf_task_id <span class="property-type">string</span></dt>
+    <dd>RMF task ID metadata (required - automatically set by start-task node)</dd>
+    
+    <dt>msg._rmf_robot_name <span class="property-type">string</span></dt>
+    <dd>Robot name metadata (preferred - automatically set by start-task node)</dd>
+    
+    <dt>msg._rmf_robot_fleet <span class="property-type">string</span></dt>
+    <dd>Robot fleet metadata (preferred - automatically set by start-task node)</dd>
+    
+    <dt>msg._rmf_dynamic_event_seq <span class="property-type">number</span></dt>
+    <dd>Dynamic event sequence number (required - automatically set by start-task node)</dd>
+    
+    <dt>msg.action_category <span class="property-type">string</span></dt>
+    <dd>Action category (overrides node configuration if provided)</dd>
+    
+    <dt>msg.action_description <span class="property-type">string</span></dt>
+    <dd>Action description (overrides node configuration if provided)</dd>
+    
+    <dt>msg.robot_name <span class="property-type">string</span></dt>
+    <dd>Robot name (fallback when "Use msg.robot_name" is selected)</dd>
+    
+    <dt>msg.robot_fleet <span class="property-type">string</span></dt>
+    <dd>Robot fleet (fallback when "Use msg.robot_fleet" is selected)</dd>
+  </dl>
+  
+  <h3>Outputs</h3>
+  <ol class="node-ports">
+    <li>Success
+      <dl class="message-properties">
+        <dt>payload.status <span class="property-type">string</span></dt>
+        <dd>"completed" when action is successfully executed</dd>
+        <dt>payload.action <span class="property-type">string</span></dt>
+        <dd>"perform_action" - indicates this was a perform action operation</dd>
+        <dt>payload.action_category <span class="property-type">string</span></dt>
+        <dd>The action category that was executed</dd>
+        <dt>payload.robot_name <span class="property-type">string</span></dt>
+        <dd>The robot name</dd>
+        <dt>payload.robot_fleet <span class="property-type">string</span></dt>
+        <dd>The robot fleet</dd>
+        <dt>payload.task_id <span class="property-type">string</span></dt>
+        <dd>The RMF task ID</dd>
+        <dt>payload.timestamp <span class="property-type">string</span></dt>
+        <dd>Timestamp when the action completed</dd>
+      </dl>
+    </li>
+    <li>Failed
+      <dl class="message-properties">
+        <dt>payload.status <span class="property-type">string</span></dt>
+        <dd>"failed", "error" on failure</dd>
+        <dt>payload.reason <span class="property-type">string</span></dt>
+        <dd>Description of the failure</dd>
+      </dl>
+    </li>
+  </ol>
+  
+  <h3>Details</h3>
+  <p>This node sends a perform_action dynamic event to RMF, allowing for custom action execution. The action category and description are passed to the robot's fleet adapter for processing.</p>
+  
+  <p><strong>Workflow:</strong> start-task → perform-action → end-task for complete task lifecycle management.</p>
+  
+  <p><strong>Action Categories:</strong> The action category determines what type of action the robot should perform. Common examples include "teleop" for teleoperation, "clean" for cleaning operations, or custom categories defined by your fleet adapter.</p>
+  
+  <p><strong>Action Description:</strong> Optional field that can contain JSON-formatted parameters or plain text descriptions to provide additional context for the action.</p>
+  
+  <p><strong>RMF Metadata:</strong> This node prefers to use RMF metadata (msg._rmf_*) passed through the workflow chain for robot identification and task management.</p>
+</script>

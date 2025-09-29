@@ -1,0 +1,338 @@
+<script type="text/javascript">
+  // Embedded RMF Form Utilities - Simplified
+  const RMFFormUtils = {
+    populateRobotDropdown: function(options = {}) {
+      const { node, selectId = 'node-input-robot_name', placeholder = 'Use msg.rmf_robot_name', valueProperty = 'robot_name' } = options;
+      const select = $(`#${selectId}`);
+      const currentValue = node.isLoaded ? select.val() : node[valueProperty];
+      
+      select.empty().append(`<option value="">${placeholder}</option>`);
+      
+      if (node.rmfData && node.rmfData.robots && node.rmfData.robots.length > 0) {
+        node.rmfData.robots.forEach(robot => {
+          select.append(`<option value="${robot.name}" data-fleet="${robot.fleet}">${robot.name} (${robot.fleet})</option>`);
+        });
+      }
+      
+      select.val(currentValue || '');
+    },
+
+    populateFleetDropdown: function(options = {}) {
+      const { node, selectId = 'node-input-robot_fleet', placeholder = 'Use msg.rmf_robot_fleet', valueProperty = 'robot_fleet' } = options;
+      const select = $(`#${selectId}`);
+      const currentValue = node.isLoaded ? select.val() : node[valueProperty];
+      
+      select.empty().append(`<option value="">${placeholder}</option>`);
+      
+      if (node.rmfData && node.rmfData.fleets && node.rmfData.fleets.length > 0) {
+        node.rmfData.fleets.forEach(fleet => {
+          select.append(`<option value="${fleet}">${fleet}</option>`);
+        });
+      }
+      
+      select.val(currentValue || '');
+    },
+
+    setupRobotFleetHandlers: function(options = {}) {
+      const { node, robotSelectId = 'node-input-robot_name', fleetSelectId = 'node-input-robot_fleet' } = options;
+      const robotSelect = $(`#${robotSelectId}`);
+      const fleetSelect = $(`#${fleetSelectId}`);
+
+      // Robot selection change handler
+      robotSelect.off('change').on('change', function() {
+        const selectedRobot = $(this).val();
+        const selectedOption = $(this).find('option:selected');
+        const robotFleet = selectedOption.data('fleet');
+        
+        if (selectedRobot && selectedRobot !== '' && robotFleet) {
+          fleetSelect.val(robotFleet);
+        } else {
+          fleetSelect.val('');
+        }
+      });
+
+      // Fleet selection change handler
+      fleetSelect.off('change').on('change', function() {
+        const selectedFleet = $(this).val();
+        const currentRobot = robotSelect.val();
+        
+        if (currentRobot && selectedFleet && node.rmfData && node.rmfData.robots) {
+          const robot = node.rmfData.robots.find(r => r.name === currentRobot);
+          if (robot && robot.fleet !== selectedFleet) {
+            robotSelect.val('');
+          }
+        }
+        
+        // Filter robots by fleet
+        if (selectedFleet && selectedFleet !== '') {
+          robotSelect.empty().append('<option value="">Use msg.rmf_robot_name</option>');
+          if (node.rmfData && node.rmfData.robots) {
+            node.rmfData.robots.forEach(robot => {
+              if (robot.fleet === selectedFleet) {
+                robotSelect.append(`<option value="${robot.name}" data-fleet="${robot.fleet}">${robot.name} (${robot.fleet})</option>`);
+              }
+            });
+          }
+          const robotFromFleet = node.rmfData.robots ? node.rmfData.robots.find(r => r.name === currentRobot && r.fleet === selectedFleet) : null;
+          if (robotFromFleet) {
+            robotSelect.val(currentRobot);
+          }
+        } else {
+          robotSelect.empty().append('<option value="">Use msg.rmf_robot_name</option>');
+          if (node.rmfData && node.rmfData.robots) {
+            node.rmfData.robots.forEach(robot => {
+              robotSelect.append(`<option value="${robot.name}" data-fleet="${robot.fleet}">${robot.name} (${robot.fleet})</option>`);
+            });
+          }
+          robotSelect.val(currentRobot);
+        }
+      });
+    },
+
+    showDataStatus: function(message, type = 'info', configSelectId = 'node-input-config') {
+      $('.rmf-data-status').remove();
+      let color = '#2196f3', icon = 'fa-info-circle';
+      if (type === 'error') { color = '#f44336'; icon = 'fa-exclamation-triangle'; }
+      else if (type === 'success') { color = '#4caf50'; icon = 'fa-check-circle'; }
+      const statusDiv = $(`<div class="rmf-data-status form-tips" style="color: ${color}; margin-top: 10px;"><i class="fa ${icon}" style="margin-right: 5px;"></i>${message}</div>`);
+      $(`#${configSelectId}`).closest('.form-row').after(statusDiv);
+    }
+  };
+
+  RED.nodes.registerType('start-task', {
+    category: 'RMF Dynamic Events',
+    color: '#4A90E2',
+    defaults: {
+      name: { value: '' },
+      config: { type: 'rmf-config', required: true },
+      robot_name: { value: '' },
+      robot_fleet: { value: '' },
+      estimate: { value: '{}' },
+      timeout: { value: 300 },
+      parallel_behaviour: { value: 'queue' }
+    },
+    inputs: 1,
+    outputs: 2,
+    outputLabels: ["success", "failed"],
+    icon: 'rmf.svg',
+    label: function () {
+      return this.name || 'Start DE';
+    },
+    paletteLabel: 'Start DE',
+    oneditprepare: function() {
+      const node = this;
+      
+      // Initialize data storage
+      node.rmfData = {
+        robots: [],
+        fleets: []
+      };
+      
+      // Load RMF data from context
+      loadRMFData();
+      
+      // Setup change handlers
+      setupChangeHandlers();
+      
+      // Setup refresh button
+      setupRefreshButton();
+      
+      function setupRefreshButton() {
+        $('#refresh-rmf-data').on('click', function() {
+          const button = $(this);
+          const originalText = button.html();
+          
+          // Show loading state
+          button.html('<i class="fa fa-spinner fa-spin"></i> Loading...');
+          button.prop('disabled', true);
+          
+          // Reload data
+          loadRMFData();
+          
+          // Reset button after delay
+          setTimeout(() => {
+            button.html(originalText);
+            button.prop('disabled', false);
+          }, 1000);
+        });
+      }
+      
+      function loadRMFData() {
+        // Fetch RMF data from the global context
+        $.getJSON('/rmf/data', function(data) {
+          node.rmfData = data;
+          
+          if (data.status === 'not_initialized') {
+            console.warn('RMF context not initialized - dropdowns will be empty');
+            RMFFormUtils.showDataStatus('RMF not initialized. Deploy RMF Config node first.', 'info');
+          } else if (data.status === 'error') {
+            console.error('Error loading RMF data:', data.message);
+            RMFFormUtils.showDataStatus('Error loading RMF data: ' + data.message, 'error');
+          } else if (data.robots.length === 0) {
+            console.warn('No RMF data available - dropdowns will be empty');
+            RMFFormUtils.showDataStatus('No RMF data available. Check RMF system status.', 'info');
+          } else {
+            RMFFormUtils.showDataStatus(`Loaded ${data.robots.length} robots`, 'success');
+          }
+          
+          // Use shared utility to populate dropdowns
+          RMFFormUtils.populateRobotDropdown({ node });
+          RMFFormUtils.populateFleetDropdown({ node });
+        }).fail(function(xhr, status, error) {
+          console.error('Failed to load RMF data:', error);
+          RMFFormUtils.showDataStatus('Failed to connect to RMF data source', 'error');
+          node.rmfData = { robots: [], fleets: [] };
+          RMFFormUtils.populateRobotDropdown({ node });
+          RMFFormUtils.populateFleetDropdown({ node });
+        });
+      }
+      
+      function setupChangeHandlers() {
+        // Use shared utility for robot/fleet handlers
+        RMFFormUtils.setupRobotFleetHandlers({ node });
+      }
+    }
+  });
+</script>
+
+<script type="text/html" data-template-name="start-task">
+  <div class="form-row">
+    <label for="node-input-name">Name</label>
+    <input type="text" id="node-input-name">
+  </div>
+  <div class="form-row">
+    <label for="node-input-config"><i class="fa fa-cogs"></i> RMF Config</label>
+    <input type="text" id="node-input-config" style="width: 60%;">
+    <button type="button" id="refresh-rmf-data" class="red-ui-button" style="margin-left: 10px; width: auto;">
+      <i class="fa fa-refresh"></i> Refresh Data
+    </button>
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-robot_name">Robot Name</label>
+    <select id="node-input-robot_name" style="width: 100%;">
+      <option value="">Use msg.rmf_robot_name</option>
+    </select>
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-robot_fleet">Robot Fleet</label>
+    <select id="node-input-robot_fleet" style="width: 100%;">
+      <option value="">Use msg.rmf_robot_fleet</option>
+    </select>
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-estimate">Estimate (JSON)</label>
+    <input type="text" id="node-input-estimate" placeholder='{"duration": 300}' style="width: 100%;">
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-timeout">Task Standby Timeout (seconds)</label>
+    <input type="number" id="node-input-timeout" min="1" style="width: 100%;" placeholder="300">
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-parallel_behaviour">Task Behaviour</label>
+    <select id="node-input-parallel_behaviour" style="width: 100%;">
+      <option value="ignore">Ignore - Skip if robot has active RMF task</option>
+      <option value="continue">Continue - Continue existing RMF task if robot is free (standby)</option>
+      <option value="overwrite">Overwrite - Cancel current RMF task if busy (underway)</option>
+      <option value="queue">Queue - Always create new RMF task regardless of robot status</option>
+    </select>
+  </div>
+  
+  <div class="form-tips">
+    <b>Purpose:</b><br/>
+    Creates and initializes RMF tasks for robots. This node handles the RMF task lifecycle and prepares robots for dynamic event execution.<br/><br/>
+    
+    <b>Setup Requirements:</b><br/>
+    • Deploy and connect an RMF Config node first<br/>
+    • Use "Refresh Data" button if dropdowns are empty<br/><br/>
+    
+    <b>Usage:</b><br/>
+    • Robot name and fleet are required<br/>
+    • Connect the success output to a goto-place node<br/>
+    • The node will create a new RMF task and wait for it to reach standby status<br/>
+    • Use "Use msg.xxx" dropdown options to pass values via message properties
+  </div>
+</script>
+
+<script type="text/html" data-help-name="start-task">
+  <p>Creates and initializes RMF tasks for robots. This node handles the RMF task lifecycle and prepares robots for dynamic event execution.</p>
+  
+  <h3>Configuration</h3>
+  <dl class="message-properties">
+    <dt>Robot Name <span class="property-type">string</span></dt>
+    <dd>The name of the robot (required). Select from dropdown or use "Use msg.rmf_robot_name" to pass via message.</dd>
+    
+    <dt>Robot Fleet <span class="property-type">string</span></dt>
+    <dd>The fleet the robot belongs to (required). Auto-selected when robot is chosen. Select from dropdown or use "Use msg.rmf_robot_fleet" to pass via message.</dd>
+    
+    <dt>Estimate <span class="property-type">object</span></dt>
+    <dd>JSON object containing task estimates (optional). Example: {"duration": 300}</dd>
+    
+    <dt>Task Standby Timeout <span class="property-type">number</span></dt>
+    <dd>How long to wait for task to reach standby status in seconds (default: 300)</dd>
+    
+    <dt>Task Behaviour <span class="property-type">string</span></dt>
+    <dd>How to handle robots with active RMF tasks: "ignore" (skip if has task), "continue" (only if standby), "overwrite" (cancel current), or "queue" (always create new) - default: "queue"</dd>
+  </dl>
+  
+  <h3>Inputs</h3>
+  <dl class="message-properties">
+    <dt>msg.rmf_robot_name <span class="property-type">string</span></dt>
+    <dd>Robot name (used when "Use msg.rmf_robot_name" is selected)</dd>
+    
+    <dt>msg.rmf_robot_fleet <span class="property-type">string</span></dt>
+    <dd>Robot fleet (used when "Use msg.rmf_robot_fleet" is selected)</dd>
+    
+    <dt>msg.robot_name <span class="property-type">string</span></dt>
+    <dd>Robot name (fallback - for backward compatibility)</dd>
+    
+    <dt>msg.robot_fleet <span class="property-type">string</span></dt>
+    <dd>Robot fleet (fallback - for backward compatibility)</dd>
+    
+    <dt>msg.estimate <span class="property-type">object</span></dt>
+    <dd>Task estimates (optional)</dd>
+  </dl>
+  
+  <h3>Outputs</h3>
+  <ol class="node-ports">
+    <li>Success
+      <dl class="message-properties">
+        <dt>payload.status <span class="property-type">string</span></dt>
+        <dd>"ready" when task is successfully created and in standby</dd>
+        <dt>payload.task_id <span class="property-type">string</span></dt>
+        <dd>The RMF task ID</dd>
+        <dt>payload.dynamic_event_seq <span class="property-type">number</span></dt>
+        <dd>Dynamic event sequence number for this task</dd>
+        <dt>payload.robot_name <span class="property-type">string</span></dt>
+        <dd>The robot name</dd>
+        <dt>payload.robot_fleet <span class="property-type">string</span></dt>
+        <dd>The robot fleet</dd>
+        <dt>msg.rmf_task_id <span class="property-type">string</span></dt>
+        <dd>RMF task ID metadata for next nodes in workflow</dd>
+        <dt>msg.rmf_robot_name <span class="property-type">string</span></dt>
+        <dd>Robot name metadata for next nodes in workflow</dd>
+        <dt>msg.rmf_robot_fleet <span class="property-type">string</span></dt>
+        <dd>Robot fleet metadata for next nodes in workflow</dd>
+      </dl>
+    </li>
+    <li>Failed
+      <dl class="message-properties">
+        <dt>payload.status <span class="property-type">string</span></dt>
+        <dd>"failed", "cancelled", "waiting", or "error"</dd>
+        <dt>payload.reason <span class="property-type">string</span></dt>
+        <dd>Description of the failure</dd>
+      </dl>
+    </li>
+  </ol>
+  
+  <h3>Details</h3>
+  <p>This node is the first step in the RMF task workflow. It creates an RMF task for the specified robot and waits for it to reach standby status, which means the robot is ready to receive dynamic events.</p>
+  
+  <p><strong>Workflow:</strong> Connect start-task → goto-place → end-task for complete task lifecycle management.</p>
+  
+  <p><strong>Task Reuse:</strong> If a robot already has an active task, the node will reuse it based on the task behaviour setting.</p>
+</script>

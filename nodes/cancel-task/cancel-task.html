@@ -1,0 +1,312 @@
+<script type="text/javascript">
+  RED.nodes.registerType('cancel-task', {
+    category: 'RMF Dynamic Events',
+    color: '#4A90E2',
+    defaults: {
+      name: { value: '' },
+      config: { type: 'rmf-config', required: true },
+      robot_name: { value: '' },
+      robot_fleet: { value: '' }
+    },
+    inputs: 1,
+    outputs: 1,
+    icon: 'rmf.svg',
+    label: function () {
+      return this.name || 'Cancel DE';
+    },
+    paletteLabel: 'Cancel DE',
+    oneditprepare: function() {
+      const node = this;
+      
+      // Initialize data storage
+      node.rmfData = {
+        robots: [],
+        fleets: []
+      };
+      
+      // Load RMF data from context
+      loadRMFData();
+      
+      // Setup change handlers
+      setupChangeHandlers();
+      
+      // Setup refresh button
+      setupRefreshButton();
+      
+      function setupRefreshButton() {
+        $('#refresh-rmf-data').on('click', function() {
+          const button = $(this);
+          const originalText = button.html();
+          
+          // Show loading state
+          button.html('<i class="fa fa-spinner fa-spin"></i> Loading...');
+          button.prop('disabled', true);
+          
+          // Reload data
+          loadRMFData().then(() => {
+            // Restore button
+            button.html(originalText);
+            button.prop('disabled', false);
+          }).catch(() => {
+            button.html(originalText);
+            button.prop('disabled', false);
+          });
+        });
+      }
+      
+      async function loadRMFData() {
+        try {
+          // Clear any existing status messages
+          $('.rmf-data-status').remove();
+          
+          const response = await $.get('/rmf/data');
+          
+          if (response && response.robots) {
+            node.rmfData.robots = response.robots;
+            node.rmfData.fleets = [...new Set(response.robots.map(r => r.fleet))];
+            
+            populateDropdowns();
+            showStatus('success', `Loaded ${response.robots.length} robots`);
+          } else {
+            node.rmfData.robots = [];
+            node.rmfData.fleets = [];
+            populateDropdowns();
+            showStatus('warning', 'No robot data available');
+          }
+          
+        } catch (error) {
+          console.error('Failed to load RMF data:', error);
+          node.rmfData.robots = [];
+          node.rmfData.fleets = [];
+          populateDropdowns();
+          showStatus('error', 'Failed to load RMF data');
+        }
+      }
+      
+      function showStatus(type, message) {
+        // Remove existing status
+        $('.rmf-data-status').remove();
+        
+        let statusClass = 'form-tips';
+        let icon = 'fa-info-circle';
+        let color = '#666';
+        
+        if (type === 'warning') {
+          statusClass = 'form-tips';
+          icon = 'fa-exclamation-triangle';
+          color = '#ff9800';
+        } else if (type === 'error') {
+          statusClass = 'form-tips';
+          icon = 'fa-exclamation-circle';
+          color = '#f44336';
+        } else if (type === 'success') {
+          statusClass = 'form-tips';
+          icon = 'fa-check-circle';
+          color = '#4caf50';
+        }
+        
+        const statusDiv = $(`
+          <div class="rmf-data-status ${statusClass}" style="color: ${color}; margin-top: 10px;">
+            <i class="fa ${icon}" style="margin-right: 5px;"></i>
+            ${message}
+          </div>
+        `);
+        
+        $('#node-input-config').closest('.form-row').after(statusDiv);
+      }
+      
+      function populateDropdowns() {
+        // Populate robot dropdown
+        const robotSelect = $('#node-input-robot_name');
+        robotSelect.empty();
+        robotSelect.append('<option value="">Use msg.rmf_robot_name</option>');
+        
+        if (node.rmfData.robots && node.rmfData.robots.length > 0) {
+          node.rmfData.robots.forEach(robot => {
+            robotSelect.append(`<option value="${robot.name}" data-fleet="${robot.fleet}">${robot.name} (${robot.fleet})</option>`);
+          });
+        }
+        
+        // Populate fleet dropdown
+        const fleetSelect = $('#node-input-robot_fleet');
+        fleetSelect.empty();
+        fleetSelect.append('<option value="">Use msg.rmf_robot_fleet</option>');
+        
+        if (node.rmfData.fleets && node.rmfData.fleets.length > 0) {
+          node.rmfData.fleets.forEach(fleet => {
+            fleetSelect.append(`<option value="${fleet}">${fleet}</option>`);
+          });
+        }
+        
+        // Set current values
+        robotSelect.val(node.robot_name || '');
+        fleetSelect.val(node.robot_fleet || '');
+      }
+      
+      function setupChangeHandlers() {
+        // Robot selection change handler
+        $('#node-input-robot_name').on('change', function() {
+          const selectedRobot = $(this).val();
+          const selectedOption = $(this).find('option:selected');
+          const robotFleet = selectedOption.data('fleet');
+          
+          // Only auto-select fleet if:
+          // 1. A specific robot is selected (not "Use msg.rmf_robot_name")
+          // 2. Fleet is currently set to "Use msg.rmf_robot_fleet" (empty value)
+          if (selectedRobot && selectedRobot !== '' && robotFleet) {
+            const currentFleetSelection = $('#node-input-robot_fleet').val();
+            // Only auto-select if fleet dropdown is set to "Use msg.rmf_robot_fleet" (empty value)
+            if (currentFleetSelection === '') {
+              $('#node-input-robot_fleet').val(robotFleet);
+            }
+          }
+        });
+        
+        // Fleet selection change handler
+        $('#node-input-robot_fleet').on('change', function() {
+          const selectedFleet = $(this).val();
+          const robotSelect = $('#node-input-robot_name');
+          
+          if (selectedFleet && selectedFleet !== '') {
+            // Filter robots to only show those from the selected fleet
+            const currentRobot = robotSelect.val();
+            robotSelect.empty();
+            robotSelect.append('<option value="">Use msg.rmf_robot_name</option>');
+            
+            if (node.rmfData.robots && node.rmfData.robots.length > 0) {
+              node.rmfData.robots.forEach(robot => {
+                if (robot.fleet === selectedFleet) {
+                  robotSelect.append(`<option value="${robot.name}" data-fleet="${robot.fleet}">${robot.name} (${robot.fleet})</option>`);
+                }
+              });
+            }
+            
+            // Restore selection if robot is from the selected fleet
+            const robotFromFleet = node.rmfData.robots.find(r => r.name === currentRobot && r.fleet === selectedFleet);
+            if (robotFromFleet) {
+              robotSelect.val(currentRobot);
+            }
+          } else {
+            // If "Use msg.rmf_robot_fleet" is selected, show all robots but don't reset selection
+            const currentRobot = robotSelect.val();
+            robotSelect.empty();
+            robotSelect.append('<option value="">Use msg.rmf_robot_name</option>');
+            
+            if (node.rmfData.robots && node.rmfData.robots.length > 0) {
+              node.rmfData.robots.forEach(robot => {
+                robotSelect.append(`<option value="${robot.name}" data-fleet="${robot.fleet}">${robot.name} (${robot.fleet})</option>`);
+              });
+            }
+            
+            // Restore the current robot selection
+            robotSelect.val(currentRobot);
+          }
+        });
+      }
+    }
+  });
+</script>
+
+<script type="text/html" data-template-name="cancel-task">
+  <div class="form-row">
+    <label for="node-input-name">Name</label>
+    <input type="text" id="node-input-name">
+  </div>
+  <div class="form-row">
+    <label for="node-input-config"><i class="fa fa-cogs"></i> RMF Config</label>
+    <input type="text" id="node-input-config" style="width: 60%;">
+    <button type="button" id="refresh-rmf-data" class="red-ui-button" style="margin-left: 10px; width: auto;">
+      <i class="fa fa-refresh"></i> Refresh Data
+    </button>
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-robot_name">Robot Name</label>
+    <select id="node-input-robot_name" style="width: 100%;">
+      <option value="">Use msg.rmf_robot_name</option>
+    </select>
+  </div>
+  
+  <div class="form-row">
+    <label for="node-input-robot_fleet">Robot Fleet</label>
+    <select id="node-input-robot_fleet" style="width: 100%;">
+      <option value="">Use msg.rmf_robot_fleet</option>
+    </select>
+  </div>
+  
+  <div class="form-tips">
+    <b>Purpose:</b><br/>
+    Cancels active RMF tasks for robots. This node can be used to immediately stop and cancel any ongoing dynamic event sequence for a robot.<br/><br/>
+    
+    <b>Setup Requirements:</b><br/>
+    • Deploy and connect an RMF Config node first<br/>
+    • Use "Refresh Data" button if dropdowns are empty<br/><br/>
+    
+    <b>Usage:</b><br/>
+    • Robot name and fleet can come from previous nodes via RMF metadata<br/>
+    • Use "Use msg.xxx" dropdown options to pass values via message properties<br/>
+    • Can be used independently or as part of error handling workflows<br/>
+    • Will cancel the currently active dynamic event for the specified robot
+  </div>
+</script>
+
+<script type="text/html" data-help-name="cancel-task">
+  <p>Cancels active RMF tasks for robots. This node sends a cancel command to immediately stop any ongoing dynamic event sequence for a robot.</p>
+  
+  <h3>Configuration</h3>
+  <dl class="message-properties">
+    <dt>Robot Name <span class="property-type">string</span></dt>
+    <dd>The name of the robot (optional). Select from dropdown or use "Use msg.robot_name" to pass via message. Usually passed from previous nodes via RMF metadata.</dd>
+    
+    <dt>Robot Fleet <span class="property-type">string</span></dt>
+    <dd>The fleet the robot belongs to (optional). Auto-selected when robot is chosen. Usually passed from previous nodes via RMF metadata.</dd>
+  </dl>
+  
+  <h3>Inputs</h3>
+  <dl class="message-properties">
+    <dt>msg._rmf_task_id <span class="property-type">string</span></dt>
+    <dd>RMF task ID metadata (preferred - automatically set by start-task node)</dd>
+    
+    <dt>msg._rmf_robot_name <span class="property-type">string</span></dt>
+    <dd>Robot name metadata (preferred - automatically set by start-task node)</dd>
+    
+    <dt>msg._rmf_robot_fleet <span class="property-type">string</span></dt>
+    <dd>Robot fleet metadata (preferred - automatically set by start-task node)</dd>
+    
+    <dt>msg.robot_name <span class="property-type">string</span></dt>
+    <dd>Robot name (fallback when "Use msg.robot_name" is selected)</dd>
+    
+    <dt>msg.robot_fleet <span class="property-type">string</span></dt>
+    <dd>Robot fleet (fallback when "Use msg.robot_fleet" is selected)</dd>
+  </dl>
+  
+  <h3>Outputs</h3>
+  <dl class="message-properties">
+    <dt>payload.status <span class="property-type">string</span></dt>
+    <dd>"cancelled" when task is successfully cancelled, "failed" on failure, "error" on exception</dd>
+    
+    <dt>payload.action <span class="property-type">string</span></dt>
+    <dd>"cancel" - indicates this was a cancel task operation</dd>
+    
+    <dt>payload.robot_name <span class="property-type">string</span></dt>
+    <dd>The robot name</dd>
+    
+    <dt>payload.robot_fleet <span class="property-type">string</span></dt>
+    <dd>The robot fleet</dd>
+    
+    <dt>payload.task_id <span class="property-type">string</span></dt>
+    <dd>The RMF task ID that was cancelled (if available)</dd>
+    
+    <dt>payload.timestamp <span class="property-type">string</span></dt>
+    <dd>Timestamp when the cancellation was sent</dd>
+  </dl>
+  
+  <h3>Details</h3>
+  <p>This node sends a "cancel" dynamic event to RMF to immediately stop the currently active dynamic event sequence for the specified robot.</p>
+  
+  <p><strong>Usage Scenarios:</strong> Emergency stops, error handling workflows, user-initiated cancellations, or timeout-based task cancellations.</p>
+  
+  <p><strong>Behavior:</strong> The cancel command will stop any ongoing dynamic event (goto-place, delivery tasks, etc.) for the robot. The robot will remain at its current location and await new instructions.</p>
+  
+  <p><strong>RMF Metadata:</strong> This node prefers to use RMF metadata (msg._rmf_*) passed through the workflow chain for robot identification, but can also work with direct message properties for standalone usage.</p>
+</script>
