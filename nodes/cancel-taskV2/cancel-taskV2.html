@@ -86,22 +86,21 @@
       });
     },
 
-    showDataStatus: function(message, type = 'info', configSelectId = 'node-input-config') {
+    showDataStatus: function(message, type = 'info') {
       $('.rmf-data-status').remove();
       let color = '#2196f3', icon = 'fa-info-circle';
       if (type === 'error') { color = '#f44336'; icon = 'fa-exclamation-triangle'; }
       else if (type === 'success') { color = '#4caf50'; icon = 'fa-check-circle'; }
       const statusDiv = $(`<div class="rmf-data-status form-tips" style="color: ${color}; margin-top: 10px;"><i class="fa ${icon}" style="margin-right: 5px;"></i>${message}</div>`);
-      $(`#${configSelectId}`).closest('.form-row').after(statusDiv);
+      $('#node-input-name').closest('.form-row').after(statusDiv);
     }
   };
 
   RED.nodes.registerType('cancel-taskV2', {
-    category: 'RMF Task V2',
+    category: 'RMF v1 (OLD)',
     color: '#87CEEB',
     defaults: {
       name: { value: '' },
-      config: { type: 'rmf-config', required: true },
       robot_name: { value: '' },
       robot_fleet: { value: '' },
       task_id: { value: '' }
@@ -111,9 +110,9 @@
     outputLabels: ["success", "failed"],
     icon: 'rmf.svg',
     label: function () {
-      return this.name || 'Cancel TaskV2';
+      return this.name || 'Cancel Task';
     },
-    paletteLabel: 'Cancel TaskV2',
+    paletteLabel: 'Cancel Task',
     oneditprepare: function() {
       const node = this;
       
@@ -191,9 +190,7 @@
   </div>
   
   <div class="form-row">
-    <label for="node-input-config"><i class="fa fa-cogs"></i> RMF Config</label>
-    <input type="text" id="node-input-config" style="width: 60%;">
-    <button type="button" id="refresh-rmf-data" class="red-ui-button" style="margin-left: 10px; width: auto;">
+    <button type="button" id="refresh-rmf-data" class="red-ui-button" style="width: auto;">
       <i class="fa fa-refresh"></i> Refresh Data
     </button>
   </div>
@@ -237,7 +234,10 @@
 </script>
 
 <script type="text/html" data-help-name="cancel-taskV2">
-  <p>Cancels RMF Task V2 compose tasks. Can cancel by task ID directly or by finding the active task for a specific robot.</p>
+  <p><strong>⚠️ LEGACY NODE - For RMF 1.0 Tasks (OLD)</strong></p>
+  <p>Cancels RMF 1.0 compose tasks created by "RMF 1.0 Task" nodes. Can cancel by task ID directly or by finding the active task for a specific robot.</p>
+  
+  <p><strong>🆕 For Dynamic Events, use "cancel-task" instead.</strong></p>
   
   <h3>Configuration</h3>
   <dl class="message-properties">

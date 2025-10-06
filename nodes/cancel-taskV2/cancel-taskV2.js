@@ -21,8 +21,8 @@ module.exports = function (RED) {
       node.status({ fill: fill, shape: shape, text: text });
     }
     
-    // Initialize with waiting status
-    setStatus('yellow', 'ring', 'Waiting for RMF config...');
+    // Initialize with ready status - no rmf-config dependency
+    setStatus('yellow', 'ring', 'Ready');
     
     function updateRMFStatus() {
       try {
@@ -45,17 +45,10 @@ module.exports = function (RED) {
       }
     }
 
-    // Wait for RMF config to be ready
-    let rmfConfigReady = false;
-    if (node.configNode) {
-      node.configNode.on('rmf-ready', (readyInfo) => {
-        console.log('[CANCEL-TASKV2] RMF config ready, checking connection...');
-        rmfConfigReady = true;
-        setStatus('yellow', 'ring', 'Connecting to RMF...');
-        // Small delay to allow RMF context to fully initialize
-        setTimeout(updateRMFStatus, 1000);
-      });
-    }
+    // No rmf-config dependency - start monitoring RMF context directly
+    let rmfConfigReady = true; // Always ready since we don't wait for config
+    // Start monitoring RMF status immediately
+    setTimeout(updateRMFStatus, 1000);
 
     // Listen for RMF context events - but only after config is ready
     function onReady() {

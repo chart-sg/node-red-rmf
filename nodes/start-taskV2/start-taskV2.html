@@ -837,7 +837,7 @@
   }
 
   RED.nodes.registerType('start-taskV2', {
-    category: 'RMF Task V2',
+    category: 'RMF v1 (OLD)',
     color: '#87CEEB',
     defaults: {
       name: { value: '' },
@@ -853,9 +853,9 @@
     outputLabels: ["success", "failed", "status"],
     icon: 'rmf.svg',
     label: function () {
-      return this.name || 'Start TaskV2';
+      return this.name || 'Create Task';
     },
-    paletteLabel: 'Start TaskV2',
+    paletteLabel: 'Create Task',
     oneditprepare: function() {
       const node = this;
       
@@ -1052,7 +1052,10 @@
 </script>
 
 <script type="text/html" data-help-name="start-taskV2">
-  <p>Creates and executes RMF Task V2 compose tasks with static event sequences. This node handles the complete task lifecycle from creation to completion.</p>
+  <p><strong>⚠️ LEGACY NODE - RMF 1.0 Task Approach (OLD)</strong></p>
+  <p>Creates and executes RMF 1.0 compose tasks with static event sequences. This is the older, monolithic task approach where all events are defined upfront in a single task.</p>
+  
+  <p><strong>🆕 For new projects, consider using RMF Dynamic Events instead:</strong> start-task → goto-place → perform-action → end-task for more flexible, real-time control.</p>
   
   <h3>Configuration</h3>
   <dl class="message-properties">

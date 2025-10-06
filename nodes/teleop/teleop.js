@@ -17,6 +17,21 @@ module.exports = function(RED) {
                 // Store current message for callbacks
                 rmfBase.currentMsg = msg;
                 
+                // For nodes without config, validate global RMF context first
+                if (!rmfBase.configNode) {
+                    const contextValidation = rmfBase.validateGlobalRMFContext();
+                    if (!contextValidation.valid) {
+                        msg.payload = { 
+                            status: 'failed', 
+                            reason: contextValidation.error,
+                            error_type: contextValidation.error_type,
+                            help: contextValidation.help
+                        };
+                        node.send([null, msg, null]);
+                        return;
+                    }
+                }
+                
                 // Extract and validate RMF parameters using base class
                 const params = rmfBase.extractRMFParameters(msg);
                 const validation = rmfBase.validateRMFParameters(params);

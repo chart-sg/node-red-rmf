@@ -10,17 +10,34 @@ module.exports = function (RED) {
     node.robot_name = config.robot_name;
     node.robot_fleet = config.robot_fleet;
 
-    // Get reference to rmf-config
-    node.configNode = RED.nodes.getNode(config.config);
-
     // Simple function to set node status
     function setStatus(fill, shape, text) {
       console.log(`[END-TASK] Setting node status: ${text}`);
       node.status({ fill: fill, shape: shape, text: text });
     }
-    
-    // Initialize with waiting status
-    setStatus('yellow', 'ring', 'Waiting for RMF config...');
+
+    // Simple RMF context validation for control nodes
+    function validateRMFContext() {
+      // 1. Check if rmfContextManager exists
+      if (!rmfContextManager || !rmfContextManager.context) {
+        return {
+          valid: false,
+          error: 'RMF context not available. Ensure an RMF Config node is deployed and connected to a start-task node.',
+          error_type: 'rmf_context_missing'
+        };
+      }
+
+      // 2. Check RMF socket connection
+      if (!rmfContextManager.context.socket || !rmfContextManager.context.socket.connected) {
+        return {
+          valid: false,
+          error: 'RMF socket not connected. Check RMF server status and config.',
+          error_type: 'rmf_connection_waiting'
+        };
+      }
+
+      return { valid: true };
+    }
     
     function updateRMFStatus() {
       try {
@@ -41,33 +58,21 @@ module.exports = function (RED) {
       }
     }
 
-    // Wait for RMF config to be ready
-    let rmfConfigReady = false;
-    if (node.configNode) {
-      node.configNode.on('rmf-ready', (readyInfo) => {
-        console.log('[END-TASK] RMF config ready, checking connection...');
-        rmfConfigReady = true;
-        setStatus('yellow', 'ring', 'Connecting to RMF...');
-        // Small delay to allow RMF context to fully initialize
-        setTimeout(updateRMFStatus, 1000);
-      });
-    }
-
-    // Listen for RMF context events - but only after config is ready
+    // Listen for RMF context events
     function onReady() {
-      if (rmfConfigReady) updateRMFStatus();
+      updateRMFStatus();
     }
     function onSocketConnected() {
-      if (rmfConfigReady) updateRMFStatus();
+      updateRMFStatus();
     }
     function onSocketDisconnected() {
-      if (rmfConfigReady) setStatus('red', 'ring', 'RMF disconnected');
+      setStatus('red', 'ring', 'RMF disconnected');
     }
     function onCleanedUp() {
-      if (rmfConfigReady) setStatus('red', 'ring', 'RMF cleaned up');
+      setStatus('red', 'ring', 'RMF cleaned up');
     }
     function onError(err) {
-      if (rmfConfigReady) setStatus('red', 'ring', 'RMF error: ' + (err && err.message ? err.message : 'unknown'));
+      setStatus('red', 'ring', 'RMF error: ' + (err && err.message ? err.message : 'unknown'));
     }
 
     rmfEvents.on('ready', onReady);
@@ -76,7 +81,9 @@ module.exports = function (RED) {
     rmfEvents.on('cleanedUp', onCleanedUp);
     rmfEvents.on('error', onError);
 
-    // Don't call updateRMFStatus() immediately - wait for rmf-ready event
+    // Initialize status check
+    setStatus('yellow', 'ring', 'Waiting for RMF context...');
+    setTimeout(updateRMFStatus, 1000);
 
     // Clear listeners on close
     node.on('close', async (removed, done) => {
@@ -90,14 +97,16 @@ module.exports = function (RED) {
 
     node.on('input', async (msg, send, done) => {
       try {
-        // Check RMF connection
-        if (!rmfContextManager.context.socket || !rmfContextManager.context.socket.connected) {
-          setStatus('yellow', 'ring', 'Waiting for RMF connection');
+        // Validate global RMF context first
+        const contextValidation = validateRMFContext();
+        if (!contextValidation.valid) {
+          setStatus('red', 'ring', 'No RMF context');
           msg.payload = { 
-            status: 'waiting', 
-            reason: 'RMF socket not connected yet' 
+            status: 'failed', 
+            reason: contextValidation.error,
+            error_type: contextValidation.error_type
           };
-          send(msg);
+          send([null, msg]); // Send to failed output 
           return done();
         }
 
@@ -138,23 +147,41 @@ module.exports = function (RED) {
           setStatus('red', 'ring', 'Robot context not found');
           msg.payload = { 
             status: 'failed', 
-            reason: `Robot context not found for ${robotName} (${robotFleet})` 
+            reason: `Robot context not available for ${robotName} in fleet ${robotFleet}` 
           };
-          send(msg);
+          send([null, msg]);
           return done();
         }
 
+        console.log(`[END-TASK] Robot context for ${robotName}:`, {
+          currentTaskId: robotContext.current_task_id,
+          requestedTaskId: taskId,
+          state: robotContext.state,
+          fleet: robotContext.fleet,
+          mode: robotContext.mode
+        });
+
         // Validate robot context has required fields for end event
         if (!robotContext.dynamic_event_seq) {
-          setStatus('red', 'ring', 'No active dynamic event');
+          setStatus('red', 'ring', 'No active task');
           msg.payload = { 
             status: 'failed', 
-            reason: `Robot ${robotName} (${robotFleet}) has no active dynamic event sequence. Current robot context: ${JSON.stringify(robotContext, null, 2)}`,
+            reason: `Robot ${robotName} (${robotFleet}) has no active dynamic event sequence.`,
             robot_context: robotContext,
-            help: 'Ensure the robot has an active task from start-task/goto-place nodes before calling end-task.'
+            help: 'Ensure the robot has an active task from start-task nodes before calling end-task.'
           };
-          send(msg);
+          send([null, msg]);
           return done();
+        }
+
+        // Note: dynamic_event_id might not be available immediately after task start
+        // RMF typically uses the feedback id as the dynamic_event_id
+        // If not available, we'll try to end using just the sequence number
+        let dynamicEventId = robotContext.dynamic_event_id;
+        if (!dynamicEventId) {
+          console.log(`[END-TASK] No dynamic_event_id available for ${robotName}, will attempt end with sequence ${robotContext.dynamic_event_seq}`);
+          // Use sequence number as fallback (common in RMF implementations)
+          dynamicEventId = robotContext.dynamic_event_seq;
         }
 
         // Send end event using dynamic event control
@@ -163,7 +190,8 @@ module.exports = function (RED) {
           const formattedRobotContext = {
             robot_name: robotContext.name || robotName,
             robot_fleet: robotContext.fleet || robotFleet,
-            dynamic_event_seq: robotContext.dynamic_event_seq
+            dynamic_event_seq: robotContext.dynamic_event_seq,
+            dynamic_event_id: dynamicEventId
           };
           
           console.log(`[END-TASK] Formatted robot context for end event:`, formattedRobotContext);
@@ -180,6 +208,7 @@ module.exports = function (RED) {
               rmf_robot_fleet: robotFleet,
               rmf_task_id: taskId,
               rmf_dynamic_event_seq: robotContext.dynamic_event_seq,
+              rmf_dynamic_event_id: dynamicEventId,
               timestamp: new Date().toISOString()
             };
             
@@ -213,6 +242,7 @@ module.exports = function (RED) {
             debug_info: {
               robot_context_available: !!robotContext,
               dynamic_event_seq: robotContext?.dynamic_event_seq,
+              dynamic_event_id: robotContext?.dynamic_event_id,
               dynamic_event_status: robotContext?.dynamic_event_status,
               task_id: robotContext?.task_id
             }

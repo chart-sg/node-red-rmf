@@ -26,8 +26,8 @@ module.exports = function (RED) {
       node.status({ fill: fill, shape: shape, text: text });
     }
     
-    // Initialize with waiting status
-    setStatus('yellow', 'ring', 'Waiting for RMF config...');
+    // Initialize with ready status - no rmf-config dependency
+    setStatus('yellow', 'ring', 'Ready');
     
     function updateRMFStatus() {
       try {
@@ -48,17 +48,10 @@ module.exports = function (RED) {
       }
     }
 
-    // Wait for RMF config to be ready
-    let rmfConfigReady = false;
-    if (node.configNode) {
-      node.configNode.on('rmf-ready', (readyInfo) => {
-        console.log('[GOTO-PLACE] RMF config ready, checking connection...');
-        rmfConfigReady = true;
-        setStatus('yellow', 'ring', 'Connecting to RMF...');
-        // Small delay to allow RMF context to fully initialize
-        setTimeout(updateRMFStatus, 1000);
-      });
-    }
+    // No rmf-config dependency - start monitoring RMF context directly
+    let rmfConfigReady = true; // Always ready since we don't wait for config
+    // Start monitoring RMF status immediately
+    setTimeout(updateRMFStatus, 1000);
 
     // Listen for RMF context events - but only after config is ready
     function onReady() {
@@ -83,7 +76,7 @@ module.exports = function (RED) {
     rmfEvents.on('cleanedUp', onCleanedUp);
     rmfEvents.on('error', onError);
 
-    // Don't call updateRMFStatus() immediately - wait for rmf-ready event
+    // Start monitoring RMF context status
 
     // Clear listeners and interval on close
     node.on('close', async (removed, done) => {
@@ -99,6 +92,18 @@ module.exports = function (RED) {
       let isCompleted = false; // Flag to track if goal has completed
       
       try {
+        // Validate global RMF context first
+        if (!rmfContextManager || !rmfContextManager.context) {
+          setStatus('red', 'ring', 'No RMF context');
+          msg.payload = { 
+            status: 'failed', 
+            reason: 'RMF context not available. Ensure an RMF Config node is deployed and connected to a start-task node.',
+            error_type: 'rmf_context_missing'
+          };
+          send([null, msg, null]);
+          return done();
+        }
+
         // Check RMF connection
         if (!rmfContextManager.context.socket || !rmfContextManager.context.socket.connected) {
           setStatus('yellow', 'ring', 'Waiting for RMF connection');

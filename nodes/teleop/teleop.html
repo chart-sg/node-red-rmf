@@ -91,13 +91,13 @@
         });
       },
 
-      showDataStatus: function(message, type = 'info', configSelectId = 'node-input-config') {
+      showDataStatus: function(message, type = 'info') {
         $('.rmf-data-status').remove();
         let color = '#2196f3', icon = 'fa-info-circle';
         if (type === 'error') { color = '#f44336'; icon = 'fa-exclamation-triangle'; }
         else if (type === 'success') { color = '#4caf50'; icon = 'fa-check-circle'; }
         const statusDiv = $(`<div class="rmf-data-status form-tips" style="color: ${color}; margin-top: 10px;"><i class="fa ${icon}" style="margin-right: 5px;"></i>${message}</div>`);
-        $(`#${configSelectId}`).closest('.form-row').after(statusDiv);
+        $('#node-input-name').closest('.form-row').after(statusDiv);
       },
 
       loadRMFData: async function(node) {
@@ -157,7 +157,6 @@
     color: '#6BB6FF',
     defaults: {
       name: { value: '' },
-      config: { type: 'rmf-config', required: true },
       robot_name: { value: '' },
       robot_fleet: { value: '' },
       teleop_description: { value: '' },
@@ -200,9 +199,7 @@
     <input type="text" id="node-input-name">
   </div>
   <div class="form-row">
-    <label for="node-input-config"><i class="fa fa-cogs"></i> RMF Config</label>
-    <input type="text" id="node-input-config" style="width: 60%;">
-    <button type="button" id="refresh-rmf-data" class="red-ui-button" style="margin-left: 10px; width: auto;">
+    <button type="button" id="refresh-rmf-data" class="red-ui-button" style="width: auto;">
       <i class="fa fa-refresh"></i> Refresh Data
     </button>
   </div>

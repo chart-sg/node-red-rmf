@@ -17,6 +17,21 @@ module.exports = function(RED) {
                 // Store current message for callbacks
                 rmfBase.currentMsg = msg;
                 
+                // For nodes without config, validate global RMF context first
+                if (!rmfBase.configNode) {
+                    const contextValidation = rmfBase.validateGlobalRMFContext();
+                    if (!contextValidation.valid) {
+                        msg.payload = { 
+                            status: 'failed', 
+                            reason: contextValidation.error,
+                            error_type: contextValidation.error_type,
+                            help: contextValidation.help
+                        };
+                        node.send([null, msg, null]);
+                        return;
+                    }
+                }
+                
                 // Extract and validate RMF parameters using base class
                 const params = rmfBase.extractRMFParameters(msg);
                 const validation = rmfBase.validateRMFParameters(params);
@@ -26,13 +41,23 @@ module.exports = function(RED) {
                     return;
                 }
 
+                // Helper function to get meaningful value (not empty, undefined, null, 'all', or 'auto')
+                function getMeaningfulValue(...values) {
+                    for (const value of values) {
+                        if (value && value !== '' && value !== 'all' && value !== 'auto') {
+                            return value;
+                        }
+                    }
+                    return undefined;
+                }
+
                 // Extract perform-action specific parameters
-                const actionCategory = msg.action_category || config.action_category;
-                const actionDescription = msg.action_description || config.action_description;
+                const actionCategory = getMeaningfulValue(msg.action_category, config.action_category);
+                const actionDescription = getMeaningfulValue(msg.action_description, config.action_description);
 
                 // Validate required action category
                 if (!actionCategory) {
-                    rmfBase.sendError('Action category is required');
+                    rmfBase.sendError('Missing action category', 'Action category is required for perform-action');
                     return;
                 }
 
@@ -66,7 +91,7 @@ module.exports = function(RED) {
 
             } catch (error) {
                 console.error('[PERFORM-ACTION] Error processing request:', error);
-                rmfBase.sendError(error.message);
+                rmfBase.sendError('Error', error.message);
             }
         });
     }

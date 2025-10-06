@@ -27,19 +27,33 @@ class RMFNodeBase {
   initialize(node) {
     this.node = node;
     
-    // Get RMF config
+    // For nodes that don't use config nodes (action nodes depend on start-task context)
+    // We validate RMF context directly from the global rmfContextManager
     this.configNode = this.RED.nodes.getNode(this.config.config);
     
     if (!this.configNode) {
-      this.setStatus('red', 'dot', 'RMF Config not found');
-      return false;
+      // No config node - this is expected for action nodes that depend on start-task
+      console.log(`[${this.nodeType.toUpperCase()}] No config node - will validate global RMF context on each message`);
+      this._setupDirectRMFConnection();
+    } else {
+      // Has config node - traditional pattern for start-task nodes
+      this._setupRMFConnection();
     }
-
-    // Setup RMF connection and event handlers
-    this._setupRMFConnection();
-    this._setupEventHandlers();
     
+    this._setupEventHandlers();
     return true;
+  }
+
+  /**
+   * Setup direct RMF connection validation (for nodes without config)
+   * @private
+   */
+  _setupDirectRMFConnection() {
+    // Set initial status
+    this.setStatus('yellow', 'ring', 'Ready');
+    
+    // These nodes validate RMF context on each message rather than at startup
+    this.rmfConfigReady = true; // Allow processing to proceed to message-level validation
   }
 
   /**
@@ -210,6 +224,45 @@ class RMFNodeBase {
       taskId,
       dynamicEventSeq
     };
+  }
+
+  /**
+   * Validate global RMF context availability (for nodes without config)
+   * @returns {Object} Validation result with valid flag, error message, and error_type
+   */
+  validateGlobalRMFContext() {
+    // 1. Check if rmfContextManager exists
+    if (!rmfContextManager || !rmfContextManager.context) {
+      return {
+        valid: false,
+        error: 'RMF context not available. Ensure an RMF Config node is deployed and connected to a start-task node.',
+        error_type: 'rmf_context_missing',
+        help: 'Deploy an RMF Config node and connect it to a start-task node before using this action node.'
+      };
+    }
+
+    // 2. Check RMF socket connection
+    if (!rmfContextManager.context.socket || !rmfContextManager.context.socket.connected) {
+      return {
+        valid: false,
+        error: 'RMF socket not connected. Check RMF server status and config.',
+        error_type: 'rmf_connection_waiting',
+        help: 'Ensure RMF server is running and RMF Config node is properly configured.'
+      };
+    }
+
+    // 3. Check RMF data availability (optional - some nodes may not need this)
+    const rmfData = rmfContextManager.getRMFData();
+    if (!rmfData) {
+      return {
+        valid: false,
+        error: 'RMF building data not available. Check RMF system and building map.',
+        error_type: 'rmf_data_missing',
+        help: 'Ensure RMF system is running with valid building map data.'
+      };
+    }
+
+    return { valid: true };
   }
 
   /**
