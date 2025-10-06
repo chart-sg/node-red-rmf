@@ -924,7 +924,19 @@
 </script>
 
 <script type="text/html" data-help-name="goto-place">
-  <p>Sends a robot to a specific location using RMF dynamic events.</p>
+  <p>Sends robot to a specific location or zone (goto action goal to dynamic event).</p>
+  
+  <h3>Configuration</h3>
+  <dl class="message-properties">
+    <dt>Robot Name <span class="property-type">string</span></dt>
+    <dd>The name of the robot to command (optional). Select from dropdown or use "Use msg.rmf_robot_name" to pass via message.</dd>
+    
+    <dt>Robot Fleet <span class="property-type">string</span></dt>
+    <dd>The fleet the robot belongs to (optional). Auto-selected when robot is chosen or use "Use msg.rmf_robot_fleet".</dd>
+    
+    <dt>Location Name <span class="property-type">string</span></dt>
+    <dd>The destination location or zone name (optional). Can be set via message instead.</dd>
+  </dl>
   
   <h3>Inputs</h3>
   <dl class="message-properties">

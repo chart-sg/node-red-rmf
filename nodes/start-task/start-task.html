@@ -259,7 +259,7 @@
 </script>
 
 <script type="text/html" data-help-name="start-task">
-  <p>Creates and initializes RMF tasks for robots. This node handles the RMF task lifecycle and prepares robots for dynamic event execution.</p>
+  <p>Creates a dynamic event flow for the robot (RMF task with dynamic event in standby). This node handles the RMF task lifecycle and prepares robots for receiving action commands.</p>
   
   <h3>Configuration</h3>
   <dl class="message-properties">
@@ -312,11 +312,11 @@
         <dt>payload.robot_fleet <span class="property-type">string</span></dt>
         <dd>The robot fleet</dd>
         <dt>msg.rmf_task_id <span class="property-type">string</span></dt>
-        <dd>RMF task ID metadata for next nodes in workflow</dd>
+        <dd>RMF task ID metadata for next nodes in dynamic event flow</dd>
         <dt>msg.rmf_robot_name <span class="property-type">string</span></dt>
-        <dd>Robot name metadata for next nodes in workflow</dd>
+        <dd>Robot name metadata for next nodes in dynamic event flow</dd>
         <dt>msg.rmf_robot_fleet <span class="property-type">string</span></dt>
-        <dd>Robot fleet metadata for next nodes in workflow</dd>
+        <dd>Robot fleet metadata for next nodes in dynamic event flow</dd>
       </dl>
     </li>
     <li>Failed
@@ -330,9 +330,9 @@
   </ol>
   
   <h3>Details</h3>
-  <p>This node is the first step in the RMF task workflow. It creates an RMF task for the specified robot and waits for it to reach standby status, which means the robot is ready to receive dynamic events.</p>
+  <p>This node is the first step in the RMF dynamic event flow. It creates an RMF task for the specified robot and waits for it to reach standby status, which means the robot is ready to receive dynamic events.</p>
   
-  <p><strong>Workflow:</strong> Connect start-task → goto-place → end-task for complete task lifecycle management.</p>
+  <p><strong>Dynamic Event Flow:</strong> Connect start-task → goto-place → end-task for complete dynamic event flow management.</p>
   
   <p><strong>Task Reuse:</strong> If a robot already has an active task, the node will reuse it based on the task behaviour setting.</p>
 </script>

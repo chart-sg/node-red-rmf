@@ -233,7 +233,7 @@
     Initiates teleoperation mode for robots, allowing direct human control. This node is a specialized version of perform-action specifically for teleop operations.<br/><br/>
     
     <b>Usage:</b><br/>
-    • Connect after start-task node for complete workflow: start-task → teleop → end-task<br/>
+    • Connect after start-task node for complete dynamic event flow: start-task → teleop → end-task<br/>
     • Robot name and fleet can come from previous nodes via RMF metadata<br/>
     • Description field can provide context for the teleop session<br/>
     • Duration can limit the teleop session (0 = unlimited)
@@ -241,7 +241,7 @@
 </script>
 
 <script type="text/html" data-help-name="teleop">
-  <p>Initiates teleoperation mode for robots, allowing direct human control. This is a specialized version of the perform-action node specifically designed for teleop operations.</p>
+  <p>Enables direct remote control of the robot (teleop action goal to dynamic event). This is a specialized action node designed specifically for teleoperation operations.</p>
   
   <h3>Configuration</h3>
   <dl class="message-properties">
@@ -258,8 +258,43 @@
     <dd>Time limit for the teleop session in seconds. 0 means no time limit.</dd>
   </dl>
   
+  <h3>Inputs</h3>
+  <dl class="message-properties">
+    <dt>msg.rmf_robot_name <span class="property-type">string</span></dt>
+    <dd>Robot name (used when "Use msg.rmf_robot_name" is selected)</dd>
+    
+    <dt>msg.rmf_robot_fleet <span class="property-type">string</span></dt>
+    <dd>Robot fleet (used when "Use msg.rmf_robot_fleet" is selected)</dd>
+    
+    <dt>msg.teleop_description <span class="property-type">string</span></dt>
+    <dd>Description for the teleoperation session (optional)</dd>
+    
+    <dt>msg.teleop_duration <span class="property-type">number</span></dt>
+    <dd>Duration for teleop session in seconds (optional)</dd>
+  </dl>
+  
+  <h3>Outputs</h3>
+  <ol class="node-ports">
+    <li>Success
+      <dl class="message-properties">
+        <dt>payload.status <span class="property-type">string</span></dt>
+        <dd>"completed" when teleop action is successfully initiated</dd>
+        <dt>payload.action <span class="property-type">string</span></dt>
+        <dd>"teleop" - indicates this was a teleop operation</dd>
+      </dl>
+    </li>
+    <li>Failed
+      <dl class="message-properties">
+        <dt>payload.status <span class="property-type">string</span></dt>
+        <dd>"failed" on failure, "error" on exception</dd>
+        <dt>payload.reason <span class="property-type">string</span></dt>
+        <dd>Description of the failure</dd>
+      </dl>
+    </li>
+  </ol>
+  
   <h3>Workflow</h3>
-  <p><strong>start-task → teleop → end-task</strong> for complete task lifecycle management.</p>
+  <p><strong>start-task → teleop → end-task</strong> for complete dynamic event flow management.</p>
   
   <p><strong>Teleop Support:</strong> The robot fleet must have teleop capabilities configured in its fleet adapter.</p>
 </script>

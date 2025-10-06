@@ -242,13 +242,13 @@
     <b>Usage:</b><br/>
     • Robot name and fleet can come from previous nodes via RMF metadata<br/>
     • Use "Use msg.xxx" dropdown options to pass values via message properties<br/>
-    • Can be used independently or as part of error handling workflows<br/>
+    • Can be used independently or as part of error handling dynamic event flows<br/>
     • Will cancel the currently active dynamic event for the specified robot
   </div>
 </script>
 
 <script type="text/html" data-help-name="cancel-task">
-  <p>Cancels active RMF tasks for robots. This node sends a cancel command to immediately stop any ongoing dynamic event sequence for a robot.</p>
+  <p>Stops the robot's current action and returns to waiting state (cancels underway goal, returns dynamic event to standby). This node sends a cancel command to immediately stop any ongoing action for a robot.</p>
   
   <h3>Configuration</h3>
   <dl class="message-properties">
@@ -301,9 +301,9 @@
   <h3>Details</h3>
   <p>This node sends a "cancel" dynamic event to RMF to immediately stop the currently active dynamic event sequence for the specified robot.</p>
   
-  <p><strong>Usage Scenarios:</strong> Emergency stops, error handling workflows, user-initiated cancellations, or timeout-based task cancellations.</p>
+  <p><strong>Usage Scenarios:</strong> Emergency stops, error handling dynamic event flows, user-initiated cancellations, or timeout-based task cancellations.</p>
   
   <p><strong>Behavior:</strong> The cancel command will stop any ongoing dynamic event (goto-place, delivery tasks, etc.) for the robot. The robot will remain at its current location and await new instructions.</p>
   
-  <p><strong>RMF Metadata:</strong> This node prefers to use RMF metadata (msg._rmf_*) passed through the workflow chain for robot identification, but can also work with direct message properties for standalone usage.</p>
+  <p><strong>RMF Metadata:</strong> This node prefers to use RMF metadata (msg._rmf_*) passed through the dynamic event flow for robot identification, but can also work with direct message properties for standalone usage.</p>
 </script>

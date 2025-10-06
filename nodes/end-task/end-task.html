@@ -247,7 +247,7 @@
 </script>
 
 <script type="text/html" data-help-name="end-task">
-  <p>Ends active RMF tasks for robots. This node should be connected after a goto-place node to complete the task workflow.</p>
+  <p>Completes the robot's dynamic event flow (ends dynamic event and task). Connect this node to end the dynamic event flow when all robot actions are finished.</p>
   
   <h3>Configuration</h3>
   <dl class="message-properties">
@@ -298,11 +298,11 @@
   </dl>
   
   <h3>Details</h3>
-  <p>This node sends an "end" dynamic event to RMF to complete the task lifecycle. It expects to receive robot and task information from preceding nodes in the workflow.</p>
+  <p>This node sends an "end" dynamic event to RMF to complete the task lifecycle. It expects to receive robot and task information from preceding nodes in the dynamic event flow.</p>
   
-  <p><strong>Workflow:</strong> start-task → goto-place → end-task for complete task lifecycle management.</p>
+  <p><strong>Dynamic Event Flow:</strong> start-task → goto-place → end-task for complete dynamic event flow management.</p>
   
-  <p><strong>Prerequisites:</strong> The robot must have an active RMF task with a dynamic event sequence. This is typically provided by connecting this node after goto-place in the workflow chain.</p>
+  <p><strong>Prerequisites:</strong> The robot must have an active RMF task with a dynamic event sequence. This is typically provided by connecting this node at the end of your dynamic event flow.</p>
   
-  <p><strong>RMF Metadata:</strong> This node prefers to use RMF metadata (msg._rmf_*) passed through the workflow chain for robot identification and task management.</p>
+  <p><strong>RMF Metadata:</strong> This node prefers to use RMF metadata (msg._rmf_*) passed through the dynamic event flow for robot identification and task management.</p>
 </script>

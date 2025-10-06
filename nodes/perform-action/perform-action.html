@@ -241,12 +241,12 @@
     • Action category defines the type of action to perform<br/>
     • Action description provides additional parameters or details<br/>
     • Use "Use msg.xxx" dropdown options to pass values via message properties<br/>
-    • Connect after start-task node for complete workflow: start-task → perform-action → end-task
+    • Connect after start-task node for complete dynamic event flow: start-task → perform-action → end-task
   </div>
 </script>
 
 <script type="text/html" data-help-name="perform-action">
-  <p>Executes custom actions for robots using the RMF perform_action event type. This node provides open-ended action execution capabilities.</p>
+  <p>Executes custom robot actions (custom action goal to dynamic event). This node provides open-ended action execution capabilities.</p>
   
   <h3>Configuration</h3>
   <dl class="message-properties">
@@ -323,11 +323,11 @@
   <h3>Details</h3>
   <p>This node sends a perform_action dynamic event to RMF, allowing for custom action execution. The action category and description are passed to the robot's fleet adapter for processing.</p>
   
-  <p><strong>Workflow:</strong> start-task → perform-action → end-task for complete task lifecycle management.</p>
+  <p><strong>Dynamic Event Flow:</strong> start-task → perform-action → end-task for complete dynamic event flow management.</p>
   
   <p><strong>Action Categories:</strong> The action category determines what type of action the robot should perform. Common examples include "teleop" for teleoperation, "clean" for cleaning operations, or custom categories defined by your fleet adapter.</p>
   
   <p><strong>Action Description:</strong> Optional field that can contain JSON-formatted parameters or plain text descriptions to provide additional context for the action.</p>
   
-  <p><strong>RMF Metadata:</strong> This node prefers to use RMF metadata (msg._rmf_*) passed through the workflow chain for robot identification and task management.</p>
+  <p><strong>RMF Metadata:</strong> This node prefers to use RMF metadata (msg._rmf_*) passed through the dynamic event flow for robot identification and task management.</p>
 </script>
