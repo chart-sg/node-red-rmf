@@ -930,7 +930,7 @@ async function cancelRMFTask(taskId, configNode) {
     const payload = {
       type: 'cancel_task_request',
       task_id: taskId,
-      labels: ['admin']
+      labels: []  // Empty array as specified
     };
 
     console.log(`RMF Task Manager: Sending cancel request for task ${taskId}`);

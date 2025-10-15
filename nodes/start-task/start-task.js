@@ -11,7 +11,7 @@ module.exports = function (RED) {
     node.robot_fleet = config.robot_fleet;
     node.estimate = config.estimate;
     node.timeout = config.timeout || 300; // Default 5 minutes
-    node.parallel_behaviour = config.parallel_behaviour || 'queue';
+    node.parallel_behaviour = config.parallel_behaviour || 'ignore';
 
     // Get reference to rmf-config
     node.configNode = RED.nodes.getNode(config.config);
@@ -195,78 +195,95 @@ module.exports = function (RED) {
               return done();
               
             } else if (parallelBehaviour === 'continue') {
-              if (currentStatus === 'standby') {
-                // Robot is in standby, can proceed without creating new task
-                console.log(`[START-TASK] Robot in standby, continuing with existing task context`);
-                
-                setStatus('green', 'dot', 'Task ready');
-                msg.payload = {
-                  status: 'ready',
-                  rmf_robot_name: robotName,
-                  rmf_robot_fleet: robotFleet,
-                  rmf_task_id: robotContext.task_id,
-                  dynamic_event_seq: robotContext.dynamic_event_seq,
-                  message: `Continuing with existing task for robot ${robotName}`
-                };
-                
-                // Add RMF metadata for persistence through the flow
-                msg.rmf_task_id = robotContext.task_id;
-                msg.rmf_robot_name = robotName;
-                msg.rmf_robot_fleet = robotFleet;
-                msg.rmf_dynamic_event_seq = robotContext.dynamic_event_seq;
-                
-                send([msg, null]); // Send to success output
-                return done();
-              } else {
-                // Robot is underway, cannot continue
-                setStatus('red', 'ring', 'Robot underway');
-                msg.payload = { 
-                  status: 'failed', 
-                  reason: `Robot is underway with existing task. Cannot continue due to parallel behavior: ${parallelBehaviour}`,
-                  rmf_robot_name: robotName,
-                  rmf_robot_fleet: robotFleet
-                };
-                
-                send([null, msg]); // Send to failed output
-                return done();
-              }
+              // Continue with existing task regardless of robot status
+              console.log(`[START-TASK] Continuing with existing task context (status: ${currentStatus})`);
+              
+              setStatus('green', 'dot', 'Task ready');
+              msg.payload = {
+                status: 'ready',
+                rmf_robot_name: robotName,
+                rmf_robot_fleet: robotFleet,
+                rmf_task_id: robotContext.task_id,
+                dynamic_event_seq: robotContext.dynamic_event_seq,
+                message: `Continuing with existing task for robot ${robotName} (current status: ${currentStatus})`
+              };
+              
+              // Add RMF metadata for persistence through the flow
+              msg.rmf_task_id = robotContext.task_id;
+              msg.rmf_robot_name = robotName;
+              msg.rmf_robot_fleet = robotFleet;
+              msg.rmf_dynamic_event_seq = robotContext.dynamic_event_seq;
+              
+              send([msg, null]); // Send to success output
+              return done();
               
             } else if (parallelBehaviour === 'overwrite') {
-              // Cancel the current task first, then proceed with new task
-              setStatus('yellow', 'dot', 'Cancelling current task');
-              console.log(`[START-TASK] Cancelling current task to overwrite with new request`);
+              // 3-Step overwrite process:
+              // Step 1: Cancel current dynamic event (if active)
+              // Step 2: Cancel entire RMF task 
+              // Step 3: Create new RMF task
+              setStatus('yellow', 'dot', 'Overwriting task');
+              console.log(`[START-TASK] Overwriting: cancelling current dynamic event and RMF task`);
               
               try {
-                const cancelResult = await rmfContextManager.sendDynamicEventControl('cancel', {
-                  robot_name: robotName,
-                  robot_fleet: robotFleet,
-                  dynamic_event_seq: robotContext.dynamic_event_seq,
-                  dynamic_event_id: currentEventId
-                });
+                // Step 1: Cancel current dynamic event (if underway)
+                if (currentEventId && currentStatus === 'underway') {
+                  console.log(`[START-TASK] Step 1: Cancelling current dynamic event ${currentEventId}`);
+                  setStatus('yellow', 'dot', 'Cancelling dynamic event');
+                  
+                  const eventCancelResult = await rmfContextManager.sendDynamicEventControl('cancel', {
+                    robot_name: robotName,
+                    robot_fleet: robotFleet,
+                    dynamic_event_seq: robotContext.dynamic_event_seq,
+                    dynamic_event_id: currentEventId
+                  });
+                  
+                  if (!eventCancelResult.success) {
+                    console.warn(`[START-TASK] Warning: Failed to cancel dynamic event: ${eventCancelResult.error}`);
+                    // Continue anyway - we'll cancel the whole task
+                  } else {
+                    console.log(`[START-TASK] Dynamic event cancelled successfully`);
+                  }
+                  
+                  // Brief delay for dynamic event cancellation
+                  await new Promise(resolve => setTimeout(resolve, 100));
+                } else if (currentStatus === 'standby') {
+                  console.log(`[START-TASK] Step 1: Robot in standby, skipping dynamic event cancellation`);
+                }
                 
-                if (!cancelResult.success) {
-                  setStatus('red', 'ring', 'Cancel failed');
+                // Step 2: Cancel entire RMF task
+                console.log(`[START-TASK] Step 2: Cancelling RMF task ${robotContext.task_id}`);
+                setStatus('yellow', 'dot', 'Cancelling RMF task');
+                
+                const taskCancelResult = await rmfContextManager.cancelRMFTask(robotContext.task_id, node.configNode);
+                
+                if (!taskCancelResult.success) {
+                  setStatus('red', 'ring', 'Task cancel failed');
                   msg.payload = { 
                     status: 'failed', 
-                    reason: `Failed to cancel current task for overwrite: ${cancelResult.error || 'Unknown error'}` 
+                    reason: `Failed to cancel RMF task for overwrite: ${taskCancelResult.error || 'Unknown error'}` 
                   };
                   send([null, msg]);
                   return done();
                 }
                 
-                console.log(`[START-TASK] Current task cancelled successfully, proceeding with new task`);
-                // Small delay to let the cancellation complete
-                await new Promise(resolve => setTimeout(resolve, 100));
+                console.log(`[START-TASK] RMF task cancelled successfully, proceeding with new task`);
+                setStatus('yellow', 'dot', 'Creating new task');
+                
+                // Step 3: Wait for task cancellation to propagate
+                await new Promise(resolve => setTimeout(resolve, 500));
                 
               } catch (error) {
                 setStatus('red', 'ring', 'Cancel error');
                 msg.payload = { 
                   status: 'failed', 
-                  reason: `Error cancelling current task for overwrite: ${error.message}` 
+                  reason: `Error during task cancellation for overwrite: ${error.message}` 
                 };
                 send([null, msg]);
                 return done();
               }
+              
+              // Continue to Step 3 (create new task) - falls through to normal task creation
             }
             // For 'queue' behavior, proceed to create new task (no early return)
             console.log(`[START-TASK] Queue behavior: proceeding to create new RMF task despite active task`);

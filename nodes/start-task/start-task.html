@@ -109,7 +109,7 @@
       robot_fleet: { value: '' },
       estimate: { value: '{}' },
       timeout: { value: 300 },
-      parallel_behaviour: { value: 'queue' }
+      parallel_behaviour: { value: 'ignore' }
     },
     inputs: 1,
     outputs: 2,
@@ -235,10 +235,10 @@
   <div class="form-row">
     <label for="node-input-parallel_behaviour">Task Behaviour</label>
     <select id="node-input-parallel_behaviour" style="width: 100%;">
-      <option value="ignore">Ignore - Skip if robot has active RMF task</option>
-      <option value="continue">Continue - Continue existing RMF task if robot is free (standby)</option>
-      <option value="overwrite">Overwrite - Cancel current RMF task if busy (underway)</option>
-      <option value="queue">Queue - Always create new RMF task regardless of robot status</option>
+      <option value="ignore">Ignore - Skip if existing RMF task is active</option>
+      <option value="continue">Continue - Reuse existing RMF task</option>
+      <option value="overwrite">Overwrite - Cancel existing RMF task and create new</option>
+      <option value="queue">Queue - Create new RMF task</option>
     </select>
   </div>
   
@@ -276,7 +276,7 @@
     <dd>How long to wait for task to reach standby status in seconds (default: 300)</dd>
     
     <dt>Task Behaviour <span class="property-type">string</span></dt>
-    <dd>How to handle robots with active RMF tasks: "ignore" (skip if has task), "continue" (only if standby), "overwrite" (cancel current), or "queue" (always create new) - default: "queue"</dd>
+    <dd>How to handle robots with active RMF tasks: "ignore" (skip if active), "continue" (reuse existing), "overwrite" (cancel and create new), or "queue" (create new) - default: "ignore"</dd>
   </dl>
   
   <h3>Inputs</h3>

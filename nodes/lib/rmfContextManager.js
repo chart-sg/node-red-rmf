@@ -163,6 +163,10 @@ async function createTaskV2(taskRequest, configNode) {
   return rmfTaskManager.createTaskV2(taskRequest, configNode);
 }
 
+async function cancelRMFTask(taskId, configNode) {
+  return rmfTaskManager.cancelRMFTask(taskId, configNode);
+}
+
 async function subscribeToTaskStatus(taskId, onStatusUpdate, configNode, options = {}) {
   return rmfTaskManager.subscribeToTaskStatus(taskId, onStatusUpdate, configNode, options);
 }
@@ -299,6 +303,7 @@ module.exports = {
   // Task management functions
   createRMFTask,
   createTaskV2,
+  cancelRMFTask,
   subscribeToTaskStatus,
   unsubscribeFromTaskStatus,
   getActiveTaskSubscriptions: rmfTaskManager.getActiveTaskSubscriptions,
