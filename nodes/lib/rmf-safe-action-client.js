@@ -30,8 +30,6 @@ class SafeActionClient {
         throw new Error('ROS2 manager not available. Ensure manager is initialized first.');
       }
       
-      console.log('SafeActionClient: Creating action client via manager for', this.actionType, 'at', this.actionPath);
-      
       // Create action client through the manager
       this.actionClientId = await this.bridge.createActionClient(
         this.nodeId,
@@ -71,12 +69,8 @@ class SafeActionClient {
     }
 
     try {
-      console.log('SafeActionClient: Sending goal via manager:', goal);
-      
       // Send goal through the manager
       const result = await this.bridge.sendGoal(this.actionClientId, goal, feedbackCallback);
-      
-      console.log('SafeActionClient: Goal completed via manager');
       
       // Create a goal handle-like object for compatibility
       const goalHandle = {
@@ -105,11 +99,7 @@ class SafeActionClient {
 
     if (this.actionClientId && this.bridge) {
       try {
-        console.log('SafeActionClient: Destroying action client via manager:', this.actionClientId);
-        
         this.bridge.destroyActionClient(this.actionClientId);
-        
-        console.log('SafeActionClient: Action client destroyed successfully via manager');
         
       } catch (error) {
         console.warn('SafeActionClient: Error during destroy:', error.message);

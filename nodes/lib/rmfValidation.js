@@ -43,9 +43,6 @@ function validateRobotAndFleet({ robotName, robotFleet, rmfContextManager, nodeT
   const allRobots = rmfContextManager.getRobots() || [];
   const availableRobots = allRobots.map(robot => robot.name);
   
-  console.log(`[${nodeType}] Available robots from rmfContextManager: [${availableRobots.join(', ')}]`);
-  console.log(`[${nodeType}] Validating robot "${robotName}" against available robots`);
-
   // 1) Validate robot name is in available robot names
   if (availableRobots.length === 0) {
     console.log(`[${nodeType}] No robots available in rmfContextManager, skipping robot validation`);
@@ -82,8 +79,6 @@ function validateRobotAndFleet({ robotName, robotFleet, rmfContextManager, nodeT
   if (robotName && robotFleet && allRobots.length > 0) {
     const robotsInFleet = allRobots.filter(robot => robot.fleet === robotFleet).map(robot => robot.name);
     
-    console.log(`[${nodeType}] Robots in fleet "${robotFleet}": [${robotsInFleet.join(', ')}]`);
-    
     if (!robotsInFleet.includes(robotName)) {
       return {
         isValid: false,
@@ -97,7 +92,6 @@ function validateRobotAndFleet({ robotName, robotFleet, rmfContextManager, nodeT
   }
 
   // All validations passed
-  console.log(`[${nodeType}] Robot "${robotName}" in fleet "${robotFleet}" validation passed`);
   return { isValid: true, error: null, errorPayload: null };
 }
 

@@ -42,13 +42,7 @@ class RMFRobotManager {
     const robots = this.getAllRobots();
     const robot = robots.find(r => r.name === robotName && r.fleet === fleetName);
     
-    if (robot) {
-      console.log(`RMF Robot Manager: Found robot ${robotName} from fleet ${fleetName}`);
-      return robot;
-    } else {
-      console.log(`RMF Robot Manager: Robot ${robotName} from fleet ${fleetName} not found`);
-      return null;
-    }
+    return robot || null;
   }
 
   /**
@@ -115,7 +109,6 @@ class RMFRobotManager {
       stats.averageBattery = Math.round(batterySum / batteryCount);
     }
 
-    console.log(`RMF Robot Manager: Fleet stats for ${stats.fleetName}:`, stats);
     return stats;
   }
 

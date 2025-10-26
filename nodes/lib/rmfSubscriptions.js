@@ -542,8 +542,6 @@ class RMFSubscriptions {
   // Dynamic event processing disabled to avoid conflicts with existing subscriber nodes
   processDynamicEventBegin(eventData) {
     try {
-      console.log('RMF: Dynamic event begin received:', eventData);
-      
       // Increment message counter
       this.messageCounters.dynamicEvent++;
       

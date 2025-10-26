@@ -157,19 +157,7 @@ module.exports = function (RED) {
         const orientation = getMeaningfulValue(msg.orientation, (msg.payload && msg.payload.orientation), node.orientation);
         
         // Zone parameters - handle both array (new format) and string (legacy format)
-        console.log(`[GOTO-PLACE] Raw zone inputs:`, {
-          msgZoneType: msg.zone_type,
-          msgPayloadZoneType: msg.payload && msg.payload.zone_type,
-          nodeZoneType: node.zone_type,
-          msgZonePreferredWaypoints: msg.zone_preferred_waypoints,
-          msgPayloadZonePreferredWaypoints: msg.payload && msg.payload.zone_preferred_waypoints,
-          nodeZonePreferredWaypoints: node.zone_preferred_waypoints,
-          msgZonePreferredWaypoint: msg.zone_preferred_waypoint,
-          msgPayloadZonePreferredWaypoint: msg.payload && msg.payload.zone_preferred_waypoint,
-          nodeZonePreferredWaypoint: node.zone_preferred_waypoint,
-          nodeKeys: Object.keys(node)
-        });
-        
+        // Extract and validate zone configuration
         const zoneTypes = extractZoneTypes(msg.zone_type || (msg.payload && msg.payload.zone_type) || node.zone_type);
         const zonePreferredWaypoints = msg.zone_preferred_waypoints || (msg.payload && msg.payload.zone_preferred_waypoints) || node.zone_preferred_waypoints;
         const zoneFinalFacing = getMeaningfulValue(msg.zone_final_facing, (msg.payload && msg.payload.zone_final_facing), node.zone_final_facing);
@@ -177,19 +165,7 @@ module.exports = function (RED) {
         // Legacy support for single waypoint
         const legacyZonePreferredWaypoint = getMeaningfulValue(msg.zone_preferred_waypoint, (msg.payload && msg.payload.zone_preferred_waypoint), node.zone_preferred_waypoint);
         
-        // Debug logging for zone inputs
-        console.log(`[GOTO-PLACE] Zone input processing:`, {
-          nodeZoneType: node.zone_type,
-          msgZoneType: msg.zone_type,
-          resolvedZoneTypes: zoneTypes,
-          nodeZonePreferredWaypoints: node.zone_preferred_waypoints,
-          msgZonePreferredWaypoints: msg.zone_preferred_waypoints,
-          resolvedZonePreferredWaypoints: zonePreferredWaypoints,
-          nodeZoneFinalFacing: node.zone_final_facing,
-          msgZoneFinalFacing: msg.zone_final_facing,
-          resolvedZoneFinalFacing: zoneFinalFacing,
-          legacyZonePreferredWaypoint: legacyZonePreferredWaypoint
-        });
+        // Debug logging for zone inputs (simplified)
         const stubbornPeriod = node.stubborn_period !== undefined ? node.stubborn_period : 
                                (msg.stubborn_period !== undefined ? msg.stubborn_period : 0);
         const parallelBehaviour = node.parallel_behaviour || msg.parallel_behaviour || 'ignore';

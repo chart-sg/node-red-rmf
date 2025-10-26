@@ -334,8 +334,6 @@ async function subscribeToTaskStatus(taskId, onStatusUpdate, configNode, options
     // Enhanced status handler with goal completion detection
     const enhancedStatusHandler = (data) => {
       try {
-        console.log(`RMF: Enhanced status handler for ${taskId}:`, data);
-        
         // Always call the original status update handler
         onStatusUpdate(data);
         
@@ -548,7 +546,7 @@ function getTaskSubscriptionStats() {
  * @returns {Promise<Object>} Result from action client
  */
 async function sendDynamicEventControl(type, robot, options = {}) {
-  console.log(`[RMF][DEBUG] sendDynamicEventControl called with type: ${type}, robot:`, robot);
+  // Send dynamic event control (cancel/end) goal
   
   if (!robot || !robot.robot_name || !robot.robot_fleet || !robot.dynamic_event_seq) {
     throw new Error('Robot context must include robot_name, robot_fleet, and dynamic_event_seq');
@@ -580,7 +578,7 @@ async function sendDynamicEventControl(type, robot, options = {}) {
     throw new Error('Invalid type for sendDynamicEventControl: ' + type);
   }
   
-  console.log(`[RMF][DEBUG] Final cancel goal being sent:`, goal);
+  // Send the dynamic event control goal
   return await sendDynamicEventGoal(goal, options);
 }
 
@@ -687,7 +685,7 @@ async function sendDynamicEventGoal(goalData, callbacks = {}) {
       console.log(`[RMF][DEBUG] Including id field in goal: ${goal.id}`);
     }
     
-    console.log('RMF: Sending goal (safe wrapper):', goal);
+    // Send the dynamic event goal
     const goalHandle = await safeActionClient.sendGoal(goal, function (feedback) {
       console.log('RMF: Feedback received:', feedback);
       // Update robot context with dynamic_event_status and dynamic_event_id if present in feedback
@@ -735,7 +733,6 @@ async function sendDynamicEventGoal(goalData, callbacks = {}) {
           timestamp: new Date().toISOString(),
           result: null
         };
-        console.log('RMF: Calling onGoalComplete callback for rejection with:', completionData);
         callbacks.onGoalComplete(completionData);
       }
       
@@ -803,7 +800,6 @@ async function sendDynamicEventGoal(goalData, callbacks = {}) {
         timestamp: new Date().toISOString(),
         result: result
       };
-      console.log('RMF: Calling onGoalComplete callback with:', completionData);
       callbacks.onGoalComplete(completionData);
     }
     
@@ -856,7 +852,6 @@ async function sendDynamicEventGoal(goalData, callbacks = {}) {
         result: null,
         error: error.message
       };
-      console.log('RMF: Calling onGoalComplete callback for error with:', completionData);
       callbacks.onGoalComplete(completionData);
     }
     
