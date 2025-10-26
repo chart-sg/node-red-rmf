@@ -27,8 +27,14 @@ function debugROS2Node() {
     console.log('  - createSubscription:', typeof context.node.createSubscription);
     console.log('  - createService:', typeof context.node.createService);
     console.log('  - createClient:', typeof context.node.createClient);
-    console.log('  - createActionClient:', typeof context.node.createActionClient);
-    console.log('  - createActionServer:', typeof context.node.createActionServer);
+    
+    // Action methods - note: these are typically undefined for direct nodes
+    // Action functionality is provided via ROS2 Manager bridge instead
+    const hasActionClient = typeof context.node.createActionClient;
+    const hasActionServer = typeof context.node.createActionServer;
+    console.log('  - createActionClient:', hasActionClient, hasActionClient === 'undefined' ? '(provided via bridge)' : '');
+    console.log('  - createActionServer:', hasActionServer, hasActionServer === 'undefined' ? '(provided via bridge)' : '');
+    
     console.log('  - Other methods:', Object.getOwnPropertyNames(context.node).filter(name => typeof context.node[name] === 'function'));
   } else {
     console.log('RMF: ROS2 node not available for debugging');
@@ -108,9 +114,6 @@ async function initROS2(options = {}) {
       globalRosState.isInitialized = true;
       globalRosState.isInitializing = false;
       globalRosState.initPromise = null;
-      
-      // Debug node capabilities
-      debugROS2Node();
       
       // Update global context
       updateGlobalContext();
@@ -204,9 +207,6 @@ async function initROS2(options = {}) {
       globalRosState.isInitializing = false;
       globalRosState.initPromise = null;
       
-      // Debug node capabilities
-      debugROS2Node();
-
       // Initialize subscriptions manager
       try {
         const RMFSubscriptions = require('./rmfSubscriptions');

@@ -18,7 +18,6 @@ module.exports = function (RED) {
 
     // Simple function to set node status
     function setStatus(fill, shape, text) {
-      console.log(`[START-EVENTS] Setting node status: ${text}`);
       node.status({ fill: fill, shape: shape, text: text });
     }
     

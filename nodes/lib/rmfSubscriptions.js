@@ -124,22 +124,18 @@ class RMFSubscriptions {
       // Always store the latest message
       this.latestMessages.buildingMap = navGraphMsg;
       
-      console.log('RMF: Processing nav_graphs data...');
+      // Process navigation graph data
       
       // Extract zones, vertices, and edges from the nav_graphs message
       const zones = navGraphMsg.zones || [];
       const vertices = navGraphMsg.vertices || [];
       const edges = navGraphMsg.edges || [];
       
-      console.log(`RMF: Found ${zones.length} zones, ${vertices.length} vertices (locations), ${edges.length} edges in nav_graphs`);
+
       
       // Process zones
       if (zones.length > 0) {
-        zones.forEach((zone, idx) => {
-          console.log(`RMF: Zone ${idx + 1}: ${zone.name} (${zone.zone_type}) - Level: ${zone.level}`);
-          console.log(`  Center: (${zone.center_x}, ${zone.center_y}), Size: ${zone.length}x${zone.width}`);
-          console.log(`  Vertices: ${zone.zone_vertices?.length || 0}, Transition lanes: ${zone.zone_transition_lanes?.length || 0}`);
-        });
+        // Zone processing logic
       }
       
       // Process vertices as locations
@@ -180,10 +176,14 @@ class RMFSubscriptions {
           locations.push(location);
         });
         
-        console.log(`RMF: Processed ${locations.length} locations from nav_graphs vertices`);
-        locations.forEach((loc, idx) => {
-          console.log(`RMF: Location ${idx + 1}: ${loc.name} (${loc.type}) - Level: ${loc.level_name}, Pos: (${loc.x.toFixed(2)}, ${loc.y.toFixed(2)})`);
-        });
+        // Group locations by type for final summary
+        const locationsByType = locations.reduce((acc, loc) => {
+          acc[loc.type] = (acc[loc.type] || 0) + 1;
+          return acc;
+        }, {});
+        
+        // Store for final summary
+        this.tempLocationsByType = locationsByType;
       }
       
       // Update context with zone, location, and navigation data
@@ -298,7 +298,18 @@ class RMFSubscriptions {
         this.context.navGraphs.push(graphData);
       }
       
-      console.log(`RMF: Updated context with ${zones.length} zones, ${locations.length} locations, and navigation graph '${navGraphMsg.name}'`);
+      // Generate final summary with location types
+      let summary = `RMF: Updated context with ${zones.length} zones, ${locations.length} locations, and navigation graph '${navGraphMsg.name}'`;
+      
+      if (this.tempLocationsByType && Object.keys(this.tempLocationsByType).length > 0) {
+        const typeSummary = Object.entries(this.tempLocationsByType)
+          .map(([type, count]) => `${count} ${type}${count !== 1 ? 's' : ''}`)
+          .join(', ');
+        summary += ` (${typeSummary})`;
+        delete this.tempLocationsByType; // Clean up
+      }
+      
+      console.log(summary);
       
       // Update the global rmfCore context as well for compatibility
       const rmfCore = require('./rmfCore');

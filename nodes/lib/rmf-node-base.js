@@ -148,7 +148,6 @@ class RMFNodeBase {
    * @param {string} text - Status text
    */
   setStatus(fill, shape, text) {
-    console.log(`[${this.nodeType.toUpperCase()}] Setting node status: ${text}`);
     this.node.status({ fill: fill, shape: shape, text: text });
   }
 
