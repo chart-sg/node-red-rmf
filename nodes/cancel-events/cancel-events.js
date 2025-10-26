@@ -3,7 +3,7 @@ module.exports = function (RED) {
   const rmfEvents = rmfContextManager.rmfEvents;
   const { validateRobotAndFleet, validateBasicInputs, handleValidationResult } = require('../lib/rmfValidation');
 
-  function EndTaskNode(config) {
+  function CancelEventsNode(config) {
     RED.nodes.createNode(this, config);
     const node = this;
 
@@ -12,7 +12,7 @@ module.exports = function (RED) {
 
     // Simple function to set node status
     function setStatus(fill, shape, text) {
-      console.log(`[END-TASK] Setting node status: ${text}`);
+      console.log(`[CANCEL-EVENTS] Setting node status: ${text}`);
       node.status({ fill: fill, shape: shape, text: text });
     }
 
@@ -22,7 +22,7 @@ module.exports = function (RED) {
       if (!rmfContextManager || !rmfContextManager.context) {
         return {
           valid: false,
-          error: 'RMF context not available. Ensure an RMF Config node is deployed and connected to a start-task node.',
+          error: 'RMF context not available. Ensure an RMF Config node is deployed and connected to a start-events node.',
           error_type: 'rmf_context_missing'
         };
       }
@@ -53,7 +53,7 @@ module.exports = function (RED) {
           setStatus('green', 'dot', 'Ready');
         }
       } catch (error) {
-        console.error('[END-TASK] Error in updateRMFStatus:', error);
+        console.error('[CANCEL-EVENTS] Error in updateRMFStatus:', error);
         setStatus('red', 'ring', 'RMF error');
       }
     }
@@ -119,7 +119,7 @@ module.exports = function (RED) {
         const basicValidation = validateBasicInputs({
           robotName,
           robotFleet,
-          nodeType: 'END-TASK'
+          nodeType: 'CANCEL-EVENTS'
         });
         
         if (!handleValidationResult(basicValidation, setStatus, send, done, msg)) {
@@ -131,15 +131,15 @@ module.exports = function (RED) {
           robotName,
           robotFleet,
           rmfContextManager,
-          nodeType: 'END-TASK',
-          skipIfEmpty: false // end-task requires both robot and fleet
+          nodeType: 'CANCEL-EVENTS',
+          skipIfEmpty: false // cancel-events requires both robot and fleet
         });
         
         if (!handleValidationResult(robotValidation, setStatus, send, done, msg)) {
           return;
         }
 
-        setStatus('blue', 'dot', 'Ending task');
+        setStatus('blue', 'dot', 'Canceling events');
 
         // Get robot context to find current task state
         const robotContext = rmfContextManager.getRobotContext(robotName, robotFleet);
@@ -147,44 +147,36 @@ module.exports = function (RED) {
           setStatus('red', 'ring', 'Robot context not found');
           msg.payload = { 
             status: 'failed', 
-            reason: `Robot context not available for ${robotName} in fleet ${robotFleet}` 
+            reason: `Robot context not found for ${robotName} (${robotFleet})` 
           };
-          send([null, msg]);
+          send(msg);
           return done();
         }
 
-        console.log(`[END-TASK] Robot context for ${robotName}:`, {
-          currentTaskId: robotContext.current_task_id,
-          requestedTaskId: taskId,
-          state: robotContext.state,
-          fleet: robotContext.fleet,
-          mode: robotContext.mode
-        });
-
-        // Validate robot context has required fields for end event
+        // Validate robot context has required fields for cancel event
         if (!robotContext.dynamic_event_seq) {
-          setStatus('red', 'ring', 'No active task');
+          setStatus('red', 'ring', 'No active dynamic event');
           msg.payload = { 
             status: 'failed', 
-            reason: `Robot ${robotName} (${robotFleet}) has no active dynamic event sequence.`,
+            reason: `Robot ${robotName} (${robotFleet}) has no active dynamic event sequence. Current robot context: ${JSON.stringify(robotContext, null, 2)}`,
             robot_context: robotContext,
-            help: 'Ensure the robot has an active task from start-task nodes before calling end-task.'
+            help: 'Ensure the robot has an active task from start-events/goto-place nodes before calling cancel-events.'
           };
-          send([null, msg]);
+          send(msg);
           return done();
         }
 
         // Note: dynamic_event_id might not be available immediately after task start
         // RMF typically uses the feedback id as the dynamic_event_id
-        // If not available, we'll try to end using just the sequence number
+        // If not available, we'll try to cancel using just the sequence number
         let dynamicEventId = robotContext.dynamic_event_id;
         if (!dynamicEventId) {
-          console.log(`[END-TASK] No dynamic_event_id available for ${robotName}, will attempt end with sequence ${robotContext.dynamic_event_seq}`);
+          console.log(`[CANCEL-EVENTS] No dynamic_event_id available for ${robotName}, will attempt cancel with sequence ${robotContext.dynamic_event_seq}`);
           // Use sequence number as fallback (common in RMF implementations)
           dynamicEventId = robotContext.dynamic_event_seq;
         }
 
-        // Send end event using dynamic event control
+        // Send cancel event using dynamic event control
         try {
           // Format robot context for sendDynamicEventControl (expects robot_name, robot_fleet)
           const formattedRobotContext = {
@@ -194,16 +186,16 @@ module.exports = function (RED) {
             dynamic_event_id: dynamicEventId
           };
           
-          console.log(`[END-TASK] Formatted robot context for end event:`, formattedRobotContext);
+          console.log(`[CANCEL-EVENTS] Formatted robot context for cancel event:`, formattedRobotContext);
           
-          const endResult = await rmfContextManager.sendDynamicEventControl('end', formattedRobotContext);
+          const cancelResult = await rmfContextManager.sendDynamicEventControl('cancel', formattedRobotContext);
           
-          if (endResult.success) {
-            setStatus('green', 'dot', 'Task ended');
+          if (cancelResult.success) {
+            setStatus('green', 'dot', 'Events canceled');
             
             msg.payload = {
               status: 'completed',
-              action: 'end',
+              action: 'cancel',
               rmf_robot_name: robotName,
               rmf_robot_fleet: robotFleet,
               rmf_task_id: taskId,
@@ -221,10 +213,10 @@ module.exports = function (RED) {
             send(msg);
             
           } else {
-            setStatus('red', 'ring', 'End failed');
+            setStatus('red', 'ring', 'Cancel failed');
             msg.payload = { 
               status: 'failed', 
-              reason: `Failed to send end event: ${endResult.error || 'Unknown error'}`,
+              reason: `Failed to send cancel event: ${cancelResult.error || 'Unknown error'}`,
               robot_name: robotName,
               robot_fleet: robotFleet
             };
@@ -232,11 +224,11 @@ module.exports = function (RED) {
           }
 
         } catch (error) {
-          console.error('[END-TASK] Error during end event:', error);
-          setStatus('red', 'ring', 'End error');
+          console.error('[CANCEL-EVENTS] Error during cancel event:', error);
+          setStatus('red', 'ring', 'Cancel error');
           msg.payload = { 
             status: 'error', 
-            reason: `Exception during end event: ${error.message}`,
+            reason: `Exception during cancel event: ${error.message}`,
             robot_name: robotName,
             robot_fleet: robotFleet,
             debug_info: {
@@ -253,7 +245,7 @@ module.exports = function (RED) {
         done();
 
       } catch (error) {
-        setStatus('red', 'ring', 'Task error');
+        setStatus('red', 'ring', 'Events error');
         msg.payload = { 
           status: 'error', 
           reason: error.message 
@@ -264,5 +256,5 @@ module.exports = function (RED) {
     });
   }
 
-  RED.nodes.registerType('end-task', EndTaskNode);
+  RED.nodes.registerType('cancel-events', CancelEventsNode);
 };

@@ -1,105 +1,5 @@
 <script type="text/javascript">
-  // Embedded RMF Form Utilities - Simplified
-  const RMFFormUtils = {
-    populateRobotDropdown: function(options = {}) {
-      const { node, selectId = 'node-input-robot_name', placeholder = 'Use msg.rmf_robot_name', valueProperty = 'robot_name' } = options;
-      const select = $(`#${selectId}`);
-      const currentValue = node.isLoaded ? select.val() : node[valueProperty];
-      
-      select.empty().append(`<option value="">${placeholder}</option>`);
-      
-      if (node.rmfData && node.rmfData.robots && node.rmfData.robots.length > 0) {
-        node.rmfData.robots.forEach(robot => {
-          select.append(`<option value="${robot.name}" data-fleet="${robot.fleet}">${robot.name} (${robot.fleet})</option>`);
-        });
-      }
-      
-      select.val(currentValue || '');
-    },
-
-    populateFleetDropdown: function(options = {}) {
-      const { node, selectId = 'node-input-robot_fleet', placeholder = 'Use msg.rmf_robot_fleet', valueProperty = 'robot_fleet' } = options;
-      const select = $(`#${selectId}`);
-      const currentValue = node.isLoaded ? select.val() : node[valueProperty];
-      
-      select.empty().append(`<option value="">${placeholder}</option>`);
-      
-      if (node.rmfData && node.rmfData.fleets && node.rmfData.fleets.length > 0) {
-        node.rmfData.fleets.forEach(fleet => {
-          select.append(`<option value="${fleet}">${fleet}</option>`);
-        });
-      }
-      
-      select.val(currentValue || '');
-    },
-
-    setupRobotFleetHandlers: function(options = {}) {
-      const { node, robotSelectId = 'node-input-robot_name', fleetSelectId = 'node-input-robot_fleet' } = options;
-      const robotSelect = $(`#${robotSelectId}`);
-      const fleetSelect = $(`#${fleetSelectId}`);
-
-      // Robot selection change handler
-      robotSelect.off('change').on('change', function() {
-        const selectedRobot = $(this).val();
-        const selectedOption = $(this).find('option:selected');
-        const robotFleet = selectedOption.data('fleet');
-        
-        if (selectedRobot && selectedRobot !== '' && robotFleet) {
-          fleetSelect.val(robotFleet);
-        } else {
-          fleetSelect.val('');
-        }
-      });
-
-      // Fleet selection change handler
-      fleetSelect.off('change').on('change', function() {
-        const selectedFleet = $(this).val();
-        const currentRobot = robotSelect.val();
-        
-        if (currentRobot && selectedFleet && node.rmfData && node.rmfData.robots) {
-          const robot = node.rmfData.robots.find(r => r.name === currentRobot);
-          if (robot && robot.fleet !== selectedFleet) {
-            robotSelect.val('');
-          }
-        }
-        
-        // Filter robots by fleet
-        if (selectedFleet && selectedFleet !== '') {
-          robotSelect.empty().append('<option value="">Use msg.rmf_robot_name</option>');
-          if (node.rmfData && node.rmfData.robots) {
-            node.rmfData.robots.forEach(robot => {
-              if (robot.fleet === selectedFleet) {
-                robotSelect.append(`<option value="${robot.name}" data-fleet="${robot.fleet}">${robot.name} (${robot.fleet})</option>`);
-              }
-            });
-          }
-          const robotFromFleet = node.rmfData.robots ? node.rmfData.robots.find(r => r.name === currentRobot && r.fleet === selectedFleet) : null;
-          if (robotFromFleet) {
-            robotSelect.val(currentRobot);
-          }
-        } else {
-          robotSelect.empty().append('<option value="">Use msg.rmf_robot_name</option>');
-          if (node.rmfData && node.rmfData.robots) {
-            node.rmfData.robots.forEach(robot => {
-              robotSelect.append(`<option value="${robot.name}" data-fleet="${robot.fleet}">${robot.name} (${robot.fleet})</option>`);
-            });
-          }
-          robotSelect.val(currentRobot);
-        }
-      });
-    },
-
-    showDataStatus: function(message, type = 'info', configSelectId = 'node-input-config') {
-      $('.rmf-data-status').remove();
-      let color = '#2196f3', icon = 'fa-info-circle';
-      if (type === 'error') { color = '#f44336'; icon = 'fa-exclamation-triangle'; }
-      else if (type === 'success') { color = '#4caf50'; icon = 'fa-check-circle'; }
-      const statusDiv = $(`<div class="rmf-data-status form-tips" style="color: ${color}; margin-top: 10px;"><i class="fa ${icon}" style="margin-right: 5px;"></i>${message}</div>`);
-      $(`#${configSelectId}`).closest('.form-row').after(statusDiv);
-    }
-  };
-
-  RED.nodes.registerType('start-task', {
+  RED.nodes.registerType('start-events', {
     category: 'RMF Dynamic Events',
     color: '#4A90E2',
     defaults: {
@@ -116,11 +16,111 @@
     outputLabels: ["success", "failed"],
     icon: 'rmf.svg',
     label: function () {
-      return this.name || 'Start DE';
+      return this.name || 'START';
     },
-    paletteLabel: 'Start DE',
+    paletteLabel: 'START',
     oneditprepare: function() {
       const node = this;
+      
+      // Local RMF Form Utilities for start-events
+      const StartEventsFormUtils = {
+        populateRobotDropdown: function(options = {}) {
+          const { node, selectId = 'node-input-robot_name', placeholder = 'Use msg.rmf_robot_name', valueProperty = 'robot_name' } = options;
+          const select = $(`#${selectId}`);
+          const currentValue = node.isLoaded ? select.val() : node[valueProperty];
+          
+          select.empty().append(`<option value="">${placeholder}</option>`);
+          
+          if (node.rmfData && node.rmfData.robots && node.rmfData.robots.length > 0) {
+            node.rmfData.robots.forEach(robot => {
+              select.append(`<option value="${robot.name}" data-fleet="${robot.fleet}">${robot.name} (${robot.fleet})</option>`);
+            });
+          }
+          
+          select.val(currentValue || '');
+        },
+
+        populateFleetDropdown: function(options = {}) {
+          const { node, selectId = 'node-input-robot_fleet', placeholder = 'Use msg.rmf_robot_fleet', valueProperty = 'robot_fleet' } = options;
+          const select = $(`#${selectId}`);
+          const currentValue = node.isLoaded ? select.val() : node[valueProperty];
+          
+          select.empty().append(`<option value="">${placeholder}</option>`);
+          
+          if (node.rmfData && node.rmfData.fleets && node.rmfData.fleets.length > 0) {
+            node.rmfData.fleets.forEach(fleet => {
+              select.append(`<option value="${fleet}">${fleet}</option>`);
+            });
+          }
+          
+          select.val(currentValue || '');
+        },
+
+        setupRobotFleetHandlers: function(options = {}) {
+          const { node, robotSelectId = 'node-input-robot_name', fleetSelectId = 'node-input-robot_fleet' } = options;
+          const robotSelect = $(`#${robotSelectId}`);
+          const fleetSelect = $(`#${fleetSelectId}`);
+
+          // Robot selection change handler
+          robotSelect.off('change').on('change', function() {
+            const selectedRobot = $(this).val();
+            const selectedOption = $(this).find('option:selected');
+            const robotFleet = selectedOption.data('fleet');
+            
+            if (selectedRobot && selectedRobot !== '' && robotFleet) {
+              fleetSelect.val(robotFleet);
+            } else {
+              fleetSelect.val('');
+            }
+          });
+
+          // Fleet selection change handler
+          fleetSelect.off('change').on('change', function() {
+            const selectedFleet = $(this).val();
+            const currentRobot = robotSelect.val();
+            
+            if (currentRobot && selectedFleet && node.rmfData && node.rmfData.robots) {
+              const robot = node.rmfData.robots.find(r => r.name === currentRobot);
+              if (robot && robot.fleet !== selectedFleet) {
+                robotSelect.val('');
+              }
+            }
+            
+            // Filter robots by fleet
+            if (selectedFleet && selectedFleet !== '') {
+              robotSelect.empty().append('<option value="">Use msg.rmf_robot_name</option>');
+              if (node.rmfData && node.rmfData.robots) {
+                node.rmfData.robots.forEach(robot => {
+                  if (robot.fleet === selectedFleet) {
+                    robotSelect.append(`<option value="${robot.name}" data-fleet="${robot.fleet}">${robot.name} (${robot.fleet})</option>`);
+                  }
+                });
+              }
+              const robotFromFleet = node.rmfData.robots ? node.rmfData.robots.find(r => r.name === currentRobot && r.fleet === selectedFleet) : null;
+              if (robotFromFleet) {
+                robotSelect.val(currentRobot);
+              }
+            } else {
+              robotSelect.empty().append('<option value="">Use msg.rmf_robot_name</option>');
+              if (node.rmfData && node.rmfData.robots) {
+                node.rmfData.robots.forEach(robot => {
+                  robotSelect.append(`<option value="${robot.name}" data-fleet="${robot.fleet}">${robot.name} (${robot.fleet})</option>`);
+                });
+              }
+              robotSelect.val(currentRobot);
+            }
+          });
+        },
+
+        showDataStatus: function(message, type = 'info', configSelectId = 'node-input-config') {
+          $('.rmf-data-status').remove();
+          let color = '#2196f3', icon = 'fa-info-circle';
+          if (type === 'error') { color = '#f44336'; icon = 'fa-exclamation-triangle'; }
+          else if (type === 'success') { color = '#4caf50'; icon = 'fa-check-circle'; }
+          const statusDiv = $(`<div class="rmf-data-status form-tips" style="color: ${color}; margin-top: 10px;"><i class="fa ${icon}" style="margin-right: 5px;"></i>${message}</div>`);
+          $(`#${configSelectId}`).closest('.form-row').after(statusDiv);
+        }
+      };
       
       // Initialize data storage
       node.rmfData = {
@@ -164,38 +164,38 @@
           
           if (data.status === 'not_initialized') {
             console.warn('RMF context not initialized - dropdowns will be empty');
-            RMFFormUtils.showDataStatus('RMF not initialized. Deploy RMF Config node first.', 'info');
+            StartEventsFormUtils.showDataStatus('RMF not initialized. Deploy RMF Config node first.', 'info');
           } else if (data.status === 'error') {
             console.error('Error loading RMF data:', data.message);
-            RMFFormUtils.showDataStatus('Error loading RMF data: ' + data.message, 'error');
+            StartEventsFormUtils.showDataStatus('Error loading RMF data: ' + data.message, 'error');
           } else if (data.robots.length === 0) {
             console.warn('No RMF data available - dropdowns will be empty');
-            RMFFormUtils.showDataStatus('No RMF data available. Check RMF system status.', 'info');
+            StartEventsFormUtils.showDataStatus('No RMF data available. Check RMF system status.', 'info');
           } else {
-            RMFFormUtils.showDataStatus(`Loaded ${data.robots.length} robots`, 'success');
+            StartEventsFormUtils.showDataStatus(`Loaded ${data.robots.length} robots`, 'success');
           }
           
           // Use shared utility to populate dropdowns
-          RMFFormUtils.populateRobotDropdown({ node });
-          RMFFormUtils.populateFleetDropdown({ node });
+          StartEventsFormUtils.populateRobotDropdown({ node });
+          StartEventsFormUtils.populateFleetDropdown({ node });
         }).fail(function(xhr, status, error) {
           console.error('Failed to load RMF data:', error);
-          RMFFormUtils.showDataStatus('Failed to connect to RMF data source', 'error');
+          StartEventsFormUtils.showDataStatus('Failed to connect to RMF data source', 'error');
           node.rmfData = { robots: [], fleets: [] };
-          RMFFormUtils.populateRobotDropdown({ node });
-          RMFFormUtils.populateFleetDropdown({ node });
+          StartEventsFormUtils.populateRobotDropdown({ node });
+          StartEventsFormUtils.populateFleetDropdown({ node });
         });
       }
       
       function setupChangeHandlers() {
         // Use shared utility for robot/fleet handlers
-        RMFFormUtils.setupRobotFleetHandlers({ node });
+        StartEventsFormUtils.setupRobotFleetHandlers({ node });
       }
     }
   });
 </script>
 
-<script type="text/html" data-template-name="start-task">
+<script type="text/html" data-template-name="start-events">
   <div class="form-row">
     <label for="node-input-name">Name</label>
     <input type="text" id="node-input-name">
@@ -258,7 +258,7 @@
   </div>
 </script>
 
-<script type="text/html" data-help-name="start-task">
+<script type="text/html" data-help-name="start-events">
   <p>Creates a dynamic event flow for the robot (RMF task with dynamic event in standby). This node handles the RMF task lifecycle and prepares robots for receiving action commands.</p>
   
   <h3>Configuration</h3>
@@ -332,7 +332,7 @@
   <h3>Details</h3>
   <p>This node is the first step in the RMF dynamic event flow. It creates an RMF task for the specified robot and waits for it to reach standby status, which means the robot is ready to receive dynamic events.</p>
   
-  <p><strong>Dynamic Event Flow:</strong> Connect start-task → goto-place → end-task for complete dynamic event flow management.</p>
+  <p><strong>Dynamic Event Flow:</strong> Connect start-events → goto-place → end-events for complete dynamic event flow management.</p>
   
   <p><strong>Task Reuse:</strong> If a robot already has an active task, the node will reuse it based on the task behaviour setting.</p>
 </script>

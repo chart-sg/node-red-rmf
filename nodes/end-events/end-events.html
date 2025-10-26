@@ -1,5 +1,5 @@
 <script type="text/javascript">
-  RED.nodes.registerType('cancel-task', {
+  RED.nodes.registerType('end-events', {
     category: 'RMF Dynamic Events',
     color: '#4A90E2',
     defaults: {
@@ -11,9 +11,9 @@
     outputs: 1,
     icon: 'rmf.svg',
     label: function () {
-      return this.name || 'Cancel DE';
+      return this.name || 'END';
     },
-    paletteLabel: 'Cancel DE',
+    paletteLabel: 'END',
     oneditprepare: function() {
       const node = this;
       
@@ -206,7 +206,7 @@
   });
 </script>
 
-<script type="text/html" data-template-name="cancel-task">
+<script type="text/html" data-template-name="end-events">
   <div class="form-row">
     <label for="node-input-name">Name</label>
     <input type="text" id="node-input-name">
@@ -227,28 +227,27 @@
   <div class="form-row">
     <label for="node-input-robot_fleet">Robot Fleet</label>
     <select id="node-input-robot_fleet" style="width: 100%;">
-      <option value="">Use msg.rmf_robot_fleet</option>
+      <option value="">Use msg.robot_fleet</option>
     </select>
   </div>
   
   <div class="form-tips">
     <b>Purpose:</b><br/>
-    Cancels active RMF tasks for robots. This node can be used to immediately stop and cancel any ongoing dynamic event sequence for a robot.<br/><br/>
+    Ends active RMF events for robots. This node should be connected after a goto-place node to complete the workflow.<br/><br/>
     
     <b>Setup Requirements:</b><br/>
-    • Connect this node after a start-task node (which provides RMF config)<br/>
+    • Connect this node after start-events and action nodes (which provide RMF config)<br/>
     • Use "Refresh Data" button if dropdowns are empty<br/><br/>
     
     <b>Usage:</b><br/>
     • Robot name and fleet can come from previous nodes via RMF metadata<br/>
     • Use "Use msg.xxx" dropdown options to pass values via message properties<br/>
-    • Can be used independently or as part of error handling dynamic event flows<br/>
-    • Will cancel the currently active dynamic event for the specified robot
+    • Connect after goto-place node for complete workflow: start-events → goto-place → end-events
   </div>
 </script>
 
-<script type="text/html" data-help-name="cancel-task">
-  <p>Stops the robot's current action and returns to waiting state (cancels underway goal, returns dynamic event to standby). This node sends a cancel command to immediately stop any ongoing action for a robot.</p>
+<script type="text/html" data-help-name="end-events">
+  <p>Completes the robot's dynamic event flow (ends dynamic event and task). Connect this node to end the dynamic event flow when all robot actions are finished.</p>
   
   <h3>Configuration</h3>
   <dl class="message-properties">
@@ -261,14 +260,14 @@
   
   <h3>Inputs</h3>
   <dl class="message-properties">
-    <dt>msg._rmf_task_id <span class="property-type">string</span></dt>
-    <dd>RMF task ID metadata (preferred - automatically set by start-task node)</dd>
+    <dt>msg.rmf_task_id <span class="property-type">string</span></dt>
+    <dd>RMF task ID metadata (preferred - automatically set by start-events node)</dd>
     
-    <dt>msg._rmf_robot_name <span class="property-type">string</span></dt>
-    <dd>Robot name metadata (preferred - automatically set by start-task node)</dd>
+    <dt>msg.rmf_robot_name <span class="property-type">string</span></dt>
+    <dd>Robot name metadata (preferred - automatically set by start-events node)</dd>
     
-    <dt>msg._rmf_robot_fleet <span class="property-type">string</span></dt>
-    <dd>Robot fleet metadata (preferred - automatically set by start-task node)</dd>
+    <dt>msg.rmf_robot_fleet <span class="property-type">string</span></dt>
+    <dd>Robot fleet metadata (preferred - automatically set by start-events node)</dd>
     
     <dt>msg.robot_name <span class="property-type">string</span></dt>
     <dd>Robot name (fallback when "Use msg.robot_name" is selected)</dd>
@@ -280,10 +279,10 @@
   <h3>Outputs</h3>
   <dl class="message-properties">
     <dt>payload.status <span class="property-type">string</span></dt>
-    <dd>"cancelled" when task is successfully cancelled, "failed" on failure, "error" on exception</dd>
+    <dd>"completed" when events are successfully ended, "failed" on failure, "error" on exception</dd>
     
     <dt>payload.action <span class="property-type">string</span></dt>
-    <dd>"cancel" - indicates this was a cancel task operation</dd>
+    <dd>"end" - indicates this was an end events operation</dd>
     
     <dt>payload.robot_name <span class="property-type">string</span></dt>
     <dd>The robot name</dd>
@@ -292,18 +291,18 @@
     <dd>The robot fleet</dd>
     
     <dt>payload.task_id <span class="property-type">string</span></dt>
-    <dd>The RMF task ID that was cancelled (if available)</dd>
+    <dd>The RMF task ID that was ended</dd>
     
     <dt>payload.timestamp <span class="property-type">string</span></dt>
-    <dd>Timestamp when the cancellation was sent</dd>
+    <dd>Timestamp when the events were ended</dd>
   </dl>
   
   <h3>Details</h3>
-  <p>This node sends a "cancel" dynamic event to RMF to immediately stop the currently active dynamic event sequence for the specified robot.</p>
+  <p>This node sends an "end" dynamic event to RMF to complete the task lifecycle. It expects to receive robot and task information from preceding nodes in the dynamic event flow.</p>
   
-  <p><strong>Usage Scenarios:</strong> Emergency stops, error handling dynamic event flows, user-initiated cancellations, or timeout-based task cancellations.</p>
+  <p><strong>Dynamic Event Flow:</strong> start-events → goto-place → end-events for complete dynamic event flow management.</p>
   
-  <p><strong>Behavior:</strong> The cancel command will stop any ongoing dynamic event (goto-place, delivery tasks, etc.) for the robot. The robot will remain at its current location and await new instructions.</p>
+  <p><strong>Prerequisites:</strong> The robot must have an active RMF task with a dynamic event sequence. This is typically provided by connecting this node at the end of your dynamic event flow.</p>
   
-  <p><strong>RMF Metadata:</strong> This node prefers to use RMF metadata (msg._rmf_*) passed through the dynamic event flow for robot identification, but can also work with direct message properties for standalone usage.</p>
+  <p><strong>RMF Metadata:</strong> This node prefers to use RMF metadata (msg.rmf_*) passed through the dynamic event flow for robot identification and task management.</p>
 </script>

@@ -42,14 +42,14 @@
     "nodes": {
       "test-node": "nodes/test-node.js",
       "rmf-config": "nodes/rmf-config/rmf-config.js",
-      "start-task": "nodes/start-task/start-task.js",
       "start-taskV2": "nodes/start-taskV2/start-taskV2.js",
+      "start-events": "nodes/start-events/start-events.js",
       "goto-place": "nodes/goto-place/goto-place.js",
       "perform-action": "nodes/perform-action/perform-action.js",
       "teleop": "nodes/teleop/teleop.js",
-      "cancel-task": "nodes/cancel-task/cancel-task.js",
       "cancel-taskV2": "nodes/cancel-taskV2/cancel-taskV2.js",
-      "end-task": "nodes/end-task/end-task.js"
+      "cancel-events": "nodes/cancel-events/cancel-events.js",
+      "end-events": "nodes/end-events/end-events.js"
     }
   },
   "scripts": {

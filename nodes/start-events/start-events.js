@@ -1,9 +1,9 @@
 module.exports = function (RED) {
   const rmfContextManager = require('../lib/rmfContextManager');
   const rmfEvents = rmfContextManager.rmfEvents;
-  const { validateRobotAndFleet, handleValidationResult } = require('../lib/rmfValidation');
+  const { validateRobotAndFleet, validateBasicInputs, handleValidationResult } = require('../lib/rmfValidation');
 
-  function StartTaskNode(config) {
+  function StartEventsNode(config) {
     RED.nodes.createNode(this, config);
     const node = this;
 
@@ -18,7 +18,7 @@ module.exports = function (RED) {
 
     // Simple function to set node status
     function setStatus(fill, shape, text) {
-      console.log(`[START-TASK] Setting node status: ${text}`);
+      console.log(`[START-EVENTS] Setting node status: ${text}`);
       node.status({ fill: fill, shape: shape, text: text });
     }
     
@@ -48,7 +48,7 @@ module.exports = function (RED) {
         // All good - socket connected and data available
         setStatus('green', 'dot', 'Ready');
       } catch (error) {
-        console.error('[START-TASK] Error in updateRMFStatus:', error);
+        console.error('[START-EVENTS] Error in updateRMFStatus:', error);
         setStatus('red', 'ring', 'RMF error');
       }
     }
@@ -57,7 +57,7 @@ module.exports = function (RED) {
     let rmfConfigReady = false;
     if (node.configNode) {
       node.configNode.on('rmf-ready', (readyInfo) => {
-        console.log('[START-TASK] RMF config ready, checking connection...');
+        console.log('[START-EVENTS] RMF config ready, checking connection...');
         rmfConfigReady = true;
         setStatus('yellow', 'ring', 'Connecting to RMF...');
         // Small delay to allow RMF context to fully initialize
@@ -149,8 +149,8 @@ module.exports = function (RED) {
           robotName,
           robotFleet,
           rmfContextManager,
-          nodeType: 'START-TASK',
-          skipIfEmpty: true // start-task allows empty robot/fleet for auto-assignment
+          nodeType: 'START-EVENTS',
+          skipIfEmpty: true // start-events allows empty robot/fleet for auto-assignment
         });
         
         if (!handleValidationResult(robotValidation, setStatus, send, done, msg, [null, msg])) {
@@ -171,18 +171,18 @@ module.exports = function (RED) {
                                robotContext.dynamic_event_status && 
                                robotContext.dynamic_event_status !== 'completed';
           
-          console.log(`[START-TASK] Robot ${robotName} has active task: ${hasActiveTask}, parallel behavior: ${parallelBehaviour}`);
+          console.log(`[START-EVENTS] Robot ${robotName} has active task: ${hasActiveTask}, parallel behavior: ${parallelBehaviour}`);
           
           if (hasActiveTask) {
             const currentStatus = robotContext.dynamic_event_status;
             const currentEventId = robotContext.dynamic_event_id;
             
-            console.log(`[START-TASK] Robot has active task with status: ${currentStatus}, event ID: ${currentEventId}, applying parallel behavior: ${parallelBehaviour}`);
+            console.log(`[START-EVENTS] Robot has active task with status: ${currentStatus}, event ID: ${currentEventId}, applying parallel behavior: ${parallelBehaviour}`);
             
             if (parallelBehaviour === 'ignore') {
               // Ignore this new request, let existing task continue
               setStatus('yellow', 'ring', 'Request ignored');
-              console.log(`[START-TASK] Ignoring new request due to parallel behavior: ignore (robot has active task)`);
+              console.log(`[START-EVENTS] Ignoring new request due to parallel behavior: ignore (robot has active task)`);
               
               msg.payload = { 
                 status: 'ignored', 
@@ -196,7 +196,7 @@ module.exports = function (RED) {
               
             } else if (parallelBehaviour === 'continue') {
               // Continue with existing task regardless of robot status
-              console.log(`[START-TASK] Continuing with existing task context (status: ${currentStatus})`);
+              console.log(`[START-EVENTS] Continuing with existing task context (status: ${currentStatus})`);
               
               setStatus('green', 'dot', 'Task ready');
               msg.payload = {
@@ -223,12 +223,12 @@ module.exports = function (RED) {
               // Step 2: Cancel entire RMF task 
               // Step 3: Create new RMF task
               setStatus('yellow', 'dot', 'Overwriting task');
-              console.log(`[START-TASK] Overwriting: cancelling current dynamic event and RMF task`);
+              console.log(`[START-EVENTS] Overwriting: cancelling current dynamic event and RMF task`);
               
               try {
                 // Step 1: Cancel current dynamic event (if underway)
                 if (currentEventId && currentStatus === 'underway') {
-                  console.log(`[START-TASK] Step 1: Cancelling current dynamic event ${currentEventId}`);
+                  console.log(`[START-EVENTS] Step 1: Cancelling current dynamic event ${currentEventId}`);
                   setStatus('yellow', 'dot', 'Cancelling dynamic event');
                   
                   const eventCancelResult = await rmfContextManager.sendDynamicEventControl('cancel', {
@@ -239,20 +239,20 @@ module.exports = function (RED) {
                   });
                   
                   if (!eventCancelResult.success) {
-                    console.warn(`[START-TASK] Warning: Failed to cancel dynamic event: ${eventCancelResult.error}`);
+                    console.warn(`[START-EVENTS] Warning: Failed to cancel dynamic event: ${eventCancelResult.error}`);
                     // Continue anyway - we'll cancel the whole task
                   } else {
-                    console.log(`[START-TASK] Dynamic event cancelled successfully`);
+                    console.log(`[START-EVENTS] Dynamic event cancelled successfully`);
                   }
                   
                   // Brief delay for dynamic event cancellation
                   await new Promise(resolve => setTimeout(resolve, 100));
                 } else if (currentStatus === 'standby') {
-                  console.log(`[START-TASK] Step 1: Robot in standby, skipping dynamic event cancellation`);
+                  console.log(`[START-EVENTS] Step 1: Robot in standby, skipping dynamic event cancellation`);
                 }
                 
                 // Step 2: Cancel entire RMF task
-                console.log(`[START-TASK] Step 2: Cancelling RMF task ${robotContext.task_id}`);
+                console.log(`[START-EVENTS] Step 2: Cancelling RMF task ${robotContext.task_id}`);
                 setStatus('yellow', 'dot', 'Cancelling RMF task');
                 
                 const taskCancelResult = await rmfContextManager.cancelRMFTask(robotContext.task_id, node.configNode);
@@ -267,7 +267,7 @@ module.exports = function (RED) {
                   return done();
                 }
                 
-                console.log(`[START-TASK] RMF task cancelled successfully, proceeding with new task`);
+                console.log(`[START-EVENTS] RMF task cancelled successfully, proceeding with new task`);
                 setStatus('yellow', 'dot', 'Creating new task');
                 
                 // Step 3: Wait for task cancellation to propagate
@@ -286,7 +286,7 @@ module.exports = function (RED) {
               // Continue to Step 3 (create new task) - falls through to normal task creation
             }
             // For 'queue' behavior, proceed to create new task (no early return)
-            console.log(`[START-TASK] Queue behavior: proceeding to create new RMF task despite active task`);
+            console.log(`[START-EVENTS] Queue behavior: proceeding to create new RMF task despite active task`);
           }
         }
 
@@ -399,7 +399,7 @@ module.exports = function (RED) {
         
         const onStatusUpdate = (data) => {
           try {
-            console.log(`[START-TASK] Task ${taskId} status update:`, data);
+            console.log(`[START-EVENTS] Task ${taskId} status update:`, data);
             
             if (data.status === 'standby') {
               clearTimeout(timeout);
@@ -455,7 +455,5 @@ module.exports = function (RED) {
     }
   }
 
-  RED.nodes.registerType('start-task', StartTaskNode, {
-    outputs: 2  // Success, Failed
-  });
+  RED.nodes.registerType('start-events', StartEventsNode);
 };

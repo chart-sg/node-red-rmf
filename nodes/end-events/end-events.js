@@ -3,7 +3,7 @@ module.exports = function (RED) {
   const rmfEvents = rmfContextManager.rmfEvents;
   const { validateRobotAndFleet, validateBasicInputs, handleValidationResult } = require('../lib/rmfValidation');
 
-  function CancelTaskNode(config) {
+  function EndEventsNode(config) {
     RED.nodes.createNode(this, config);
     const node = this;
 
@@ -12,7 +12,7 @@ module.exports = function (RED) {
 
     // Simple function to set node status
     function setStatus(fill, shape, text) {
-      console.log(`[CANCEL-TASK] Setting node status: ${text}`);
+      console.log(`[END-EVENTS] Setting node status: ${text}`);
       node.status({ fill: fill, shape: shape, text: text });
     }
 
@@ -22,7 +22,7 @@ module.exports = function (RED) {
       if (!rmfContextManager || !rmfContextManager.context) {
         return {
           valid: false,
-          error: 'RMF context not available. Ensure an RMF Config node is deployed and connected to a start-task node.',
+          error: 'RMF context not available. Ensure an RMF Config node is deployed and connected to a start-events node.',
           error_type: 'rmf_context_missing'
         };
       }
@@ -53,7 +53,7 @@ module.exports = function (RED) {
           setStatus('green', 'dot', 'Ready');
         }
       } catch (error) {
-        console.error('[CANCEL-TASK] Error in updateRMFStatus:', error);
+        console.error('[END-EVENTS] Error in updateRMFStatus:', error);
         setStatus('red', 'ring', 'RMF error');
       }
     }
@@ -119,7 +119,7 @@ module.exports = function (RED) {
         const basicValidation = validateBasicInputs({
           robotName,
           robotFleet,
-          nodeType: 'CANCEL-TASK'
+          nodeType: 'END-EVENTS'
         });
         
         if (!handleValidationResult(basicValidation, setStatus, send, done, msg)) {
@@ -131,15 +131,15 @@ module.exports = function (RED) {
           robotName,
           robotFleet,
           rmfContextManager,
-          nodeType: 'CANCEL-TASK',
-          skipIfEmpty: false // cancel-task requires both robot and fleet
+          nodeType: 'END-EVENTS',
+          skipIfEmpty: false // end-events requires both robot and fleet
         });
         
         if (!handleValidationResult(robotValidation, setStatus, send, done, msg)) {
           return;
         }
 
-        setStatus('blue', 'dot', 'Canceling task');
+        setStatus('blue', 'dot', 'Ending events');
 
         // Get robot context to find current task state
         const robotContext = rmfContextManager.getRobotContext(robotName, robotFleet);
@@ -147,36 +147,44 @@ module.exports = function (RED) {
           setStatus('red', 'ring', 'Robot context not found');
           msg.payload = { 
             status: 'failed', 
-            reason: `Robot context not found for ${robotName} (${robotFleet})` 
+            reason: `Robot context not available for ${robotName} in fleet ${robotFleet}` 
           };
-          send(msg);
+          send([null, msg]);
           return done();
         }
 
-        // Validate robot context has required fields for cancel event
+        console.log(`[END-EVENTS] Robot context for ${robotName}:`, {
+          currentTaskId: robotContext.current_task_id,
+          requestedTaskId: taskId,
+          state: robotContext.state,
+          fleet: robotContext.fleet,
+          mode: robotContext.mode
+        });
+
+        // Validate robot context has required fields for end event
         if (!robotContext.dynamic_event_seq) {
-          setStatus('red', 'ring', 'No active dynamic event');
+          setStatus('red', 'ring', 'No active events');
           msg.payload = { 
             status: 'failed', 
-            reason: `Robot ${robotName} (${robotFleet}) has no active dynamic event sequence. Current robot context: ${JSON.stringify(robotContext, null, 2)}`,
+            reason: `Robot ${robotName} (${robotFleet}) has no active dynamic event sequence.`,
             robot_context: robotContext,
-            help: 'Ensure the robot has an active task from start-task/goto-place nodes before calling cancel-task.'
+            help: 'Ensure the robot has an active task from start-events nodes before calling end-events.'
           };
-          send(msg);
+          send([null, msg]);
           return done();
         }
 
         // Note: dynamic_event_id might not be available immediately after task start
         // RMF typically uses the feedback id as the dynamic_event_id
-        // If not available, we'll try to cancel using just the sequence number
+        // If not available, we'll try to end using just the sequence number
         let dynamicEventId = robotContext.dynamic_event_id;
         if (!dynamicEventId) {
-          console.log(`[CANCEL-TASK] No dynamic_event_id available for ${robotName}, will attempt cancel with sequence ${robotContext.dynamic_event_seq}`);
+          console.log(`[END-EVENTS] No dynamic_event_id available for ${robotName}, will attempt end with sequence ${robotContext.dynamic_event_seq}`);
           // Use sequence number as fallback (common in RMF implementations)
           dynamicEventId = robotContext.dynamic_event_seq;
         }
 
-        // Send cancel event using dynamic event control
+        // Send end event using dynamic event control
         try {
           // Format robot context for sendDynamicEventControl (expects robot_name, robot_fleet)
           const formattedRobotContext = {
@@ -186,16 +194,16 @@ module.exports = function (RED) {
             dynamic_event_id: dynamicEventId
           };
           
-          console.log(`[CANCEL-TASK] Formatted robot context for cancel event:`, formattedRobotContext);
+          console.log(`[END-EVENTS] Formatted robot context for end event:`, formattedRobotContext);
           
-          const cancelResult = await rmfContextManager.sendDynamicEventControl('cancel', formattedRobotContext);
+          const endResult = await rmfContextManager.sendDynamicEventControl('end', formattedRobotContext);
           
-          if (cancelResult.success) {
-            setStatus('green', 'dot', 'Task canceled');
+          if (endResult.success) {
+            setStatus('green', 'dot', 'Events ended');
             
             msg.payload = {
               status: 'completed',
-              action: 'cancel',
+              action: 'end',
               rmf_robot_name: robotName,
               rmf_robot_fleet: robotFleet,
               rmf_task_id: taskId,
@@ -213,10 +221,10 @@ module.exports = function (RED) {
             send(msg);
             
           } else {
-            setStatus('red', 'ring', 'Cancel failed');
+            setStatus('red', 'ring', 'End failed');
             msg.payload = { 
               status: 'failed', 
-              reason: `Failed to send cancel event: ${cancelResult.error || 'Unknown error'}`,
+              reason: `Failed to send end event: ${endResult.error || 'Unknown error'}`,
               robot_name: robotName,
               robot_fleet: robotFleet
             };
@@ -224,11 +232,11 @@ module.exports = function (RED) {
           }
 
         } catch (error) {
-          console.error('[CANCEL-TASK] Error during cancel event:', error);
-          setStatus('red', 'ring', 'Cancel error');
+          console.error('[END-EVENTS] Error during end event:', error);
+          setStatus('red', 'ring', 'End error');
           msg.payload = { 
             status: 'error', 
-            reason: `Exception during cancel event: ${error.message}`,
+            reason: `Exception during end event: ${error.message}`,
             robot_name: robotName,
             robot_fleet: robotFleet,
             debug_info: {
@@ -245,7 +253,7 @@ module.exports = function (RED) {
         done();
 
       } catch (error) {
-        setStatus('red', 'ring', 'Task error');
+        setStatus('red', 'ring', 'Events error');
         msg.payload = { 
           status: 'error', 
           reason: error.message 
@@ -256,5 +264,5 @@ module.exports = function (RED) {
     });
   }
 
-  RED.nodes.registerType('cancel-task', CancelTaskNode);
+  RED.nodes.registerType('end-events', EndEventsNode);
 };
