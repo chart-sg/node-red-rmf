@@ -16,6 +16,7 @@
       robot_name: { value: '' },
       robot_fleet: { value: '' },
       location_name: { value: '' },
+      orientation: { value: '' },
       zone_type: { value: ['all'] },
       zone_preferred_waypoints: { value: [] },
       zone_final_facing: { value: '' },
@@ -63,10 +64,11 @@
       init();
       
       function init() {
-        // Initialize zone fields as hidden
+        // Initialize zone fields and orientation as hidden
         $('#node-input-zone_type').closest('.form-row').hide();
         $('#zone-preferred-waypoints-container').closest('.form-row').hide();
         $('#node-input-zone_final_facing').closest('.form-row').hide();
+        $('#orientation-row').hide();
         
         loadRMFData().then(() => {
           populateAllDropdowns();
@@ -346,17 +348,26 @@
         const zoneTypeRow = $('#node-input-zone_type').closest('.form-row');
         const zoneWaypointsRow = $('#zone-preferred-waypoints-container').closest('.form-row');
         const zoneFinalFacingRow = $('#node-input-zone_final_facing').closest('.form-row');
+        const orientationRow = $('#orientation-row');
         
         if (isZone && locationName) {
+          // Show zone-specific fields, hide waypoint orientation
           zoneTypeRow.show();
           zoneWaypointsRow.show();
           zoneFinalFacingRow.show();
+          orientationRow.hide();
           populateZoneTypeDropdown(locationName);
           populateZoneWaypointsInterface(locationName);
         } else {
+          // Hide zone-specific fields, show waypoint orientation if location selected
           zoneTypeRow.hide();
           zoneWaypointsRow.hide();
           zoneFinalFacingRow.hide();
+          if (locationName) {
+            orientationRow.show();
+          } else {
+            orientationRow.hide();
+          }
           $('#node-input-zone_type').val(['all']);
           $('#node-input-zone_final_facing').val('');
           // Clear waypoints interface
@@ -832,6 +843,12 @@
     </select>
   </div>
   
+  <div class="form-row" id="orientation-row">
+    <label for="node-input-orientation">Waypoint Orientation (radians)</label>
+    <input type="number" id="node-input-orientation" min="-6.28" max="6.28" step="0.001" style="width: 100%;" placeholder="Optional: Final facing angle in radians">
+    <div class="form-tips">Set the final facing direction (in radians) when the robot reaches the waypoint. Leave empty to use default facing. Only applicable for waypoint locations, not zones.</div>
+  </div>
+  
   <div class="form-row">
     <label for="node-input-zone_type">Zone Types</label>
     <select id="node-input-zone_type" multiple style="width: 100%; height: 80px;">
@@ -873,7 +890,7 @@
   
   <div class="form-row">
     <label for="node-input-zone_final_facing">Zone Final Facing (radians)</label>
-    <input type="number" id="node-input-zone_final_facing" min="-6.28" max="6.28" step="0.01" style="width: 100%;" placeholder="Optional: Final facing angle in radians">
+    <input type="number" id="node-input-zone_final_facing" min="-6.28" max="6.28" step="0.001" style="width: 100%;" placeholder="Optional: Final facing angle in radians">
     <div class="form-tips">Set the final facing direction (in radians) when the robot reaches the zone. Leave empty to use default facing.</div>
   </div>
   
@@ -909,6 +926,9 @@
     <dt>Location Name</dt>
     <dd>The destination location or zone name. Locations from nav graphs and zones are shown. Use "Use msg.location_name" to pass via message.</dd>
     
+    <dt>Waypoint Orientation</dt>
+    <dd>For waypoint locations, sets the final facing direction in radians. Only visible when a waypoint is selected (not for zones). Leave empty to use default facing.</dd>
+    
     <dt>Zone Types</dt>
     <dd>For zone locations, specifies the placements within the zone (All, Left, Right, Center, Top, Bottom, Human Facing, etc.). Multi-select with 'All' being mutually exclusive with other options. Only visible when a zone is selected.</dd>
     
@@ -936,6 +956,11 @@
     
     <dt>Location Name <span class="property-type">string</span></dt>
     <dd>The destination location or zone name (optional). Can be set via message instead.</dd>
+    
+    <dt>Waypoint Orientation <span class="property-type">number</span></dt>
+    <dd>The final facing direction in radians for waypoint locations (optional). Only applicable for waypoints, not zones.</dd>
+  </dl>    <dt>Waypoint Orientation <span class="property-type">number</span></dt>
+    <dd>The final facing direction in radians for waypoint locations (optional). Only applicable for waypoints, not zones.</dd>
   </dl>
   
   <h3>Inputs</h3>
@@ -948,6 +973,9 @@
     
     <dt>msg.location_name <span class="property-type">string</span></dt>
     <dd>The destination location name. Overrides node configuration if provided.</dd>
+    
+    <dt>msg.orientation <span class="property-type">number</span></dt>
+    <dd>The final facing direction in radians for waypoint locations. Overrides node configuration if provided.</dd>
     
     <dt>msg.zone_type <span class="property-type">array</span></dt>
     <dd>For zone locations, the placement types (e.g., ["left", "center"] or ["all"]).</dd>

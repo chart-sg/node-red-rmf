@@ -80,10 +80,15 @@
       if (category === 'go_to_place') {
         detailsDiv.html(`
           <div class="form-row">
-            <label>Waypoint:</label>
+            <label>Location</label>
             <select class="event-location" style="width: 100%;">
               <option value="">Select waypoint...</option>
             </select>
+          </div>
+          <div class="form-row">
+            <label>Orientation (radians)</label>
+            <input type="number" class="event-orientation" min="-6.28" max="6.28" step="0.001" style="width: 100%;" placeholder="Optional: Final facing angle in radians">
+            <div class="form-tips">Set the final facing direction (in radians) when the robot reaches the waypoint. Leave empty to use default facing.</div>
           </div>
         `);
         
@@ -503,7 +508,19 @@
         const eventData = { category };
         
         if (category === 'go_to_place') {
-          eventData.description = eventDiv.find('.event-location').val();
+          const locationName = eventDiv.find('.event-location').val();
+          const orientation = eventDiv.find('.event-orientation').val();
+          
+          if (orientation && orientation.trim() !== '') {
+            // Create place object with orientation
+            eventData.description = {
+              waypoint: locationName,
+              orientation: parseFloat(orientation)
+            };
+          } else {
+            // Simple waypoint name
+            eventData.description = locationName;
+          }
         } else if (category === 'go_to_zone') {
           eventData.zone = eventDiv.find('.event-zone').val();
           
@@ -587,7 +604,21 @@
           // Then restore specific values based on category
           if (eventData.category === 'go_to_place' && eventData.description) {
             const locationSelect = eventDiv.find('.event-location');
-            locationSelect.val(eventData.description);
+            const orientationInput = eventDiv.find('.event-orientation');
+            
+            if (typeof eventData.description === 'string') {
+              // Simple waypoint name
+              locationSelect.val(eventData.description);
+              orientationInput.val('');
+            } else if (eventData.description && eventData.description.waypoint) {
+              // Place object with potential orientation
+              locationSelect.val(eventData.description.waypoint);
+              if (eventData.description.orientation !== undefined) {
+                orientationInput.val(eventData.description.orientation);
+              } else {
+                orientationInput.val('');
+              }
+            }
             console.log(`Set location to ${eventData.description}, result:`, locationSelect.val());
           } else if (eventData.category === 'go_to_zone') {
             if (eventData.zone) {
@@ -676,7 +707,17 @@
         
         // Preserve current values
         if (category === 'go_to_place') {
-          currentData.description = eventDiv.find('.event-location').val();
+          const locationName = eventDiv.find('.event-location').val();
+          const orientation = eventDiv.find('.event-orientation').val();
+          
+          if (orientation && orientation.trim() !== '') {
+            currentData.description = {
+              waypoint: locationName,
+              orientation: parseFloat(orientation)
+            };
+          } else {
+            currentData.description = locationName;
+          }
         } else if (category === 'go_to_zone') {
           currentData.zone = eventDiv.find('.event-zone').val();
           const selectedTypes = eventDiv.find('.event-zone-types').val();

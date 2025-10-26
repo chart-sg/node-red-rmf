@@ -10,6 +10,7 @@ module.exports = function (RED) {
     node.robot_name = config.robot_name;
     node.robot_fleet = config.robot_fleet;
     node.location_name = config.location_name;
+    node.orientation = config.orientation;
     node.zone_type = config.zone_type;
     node.zone_preferred_waypoints = config.zone_preferred_waypoints;
     node.zone_preferred_waypoint = config.zone_preferred_waypoint; // Legacy support
@@ -154,6 +155,7 @@ module.exports = function (RED) {
         const robotName = msg.rmf_robot_name || (msg.payload && msg.payload.robot_name) || msg.robot_name || node.robot_name;
         const robotFleet = msg.rmf_robot_fleet || (msg.payload && msg.payload.robot_fleet) || msg.robot_fleet || node.robot_fleet;
         const locationName = node.location_name || msg.location_name;
+        const orientation = getMeaningfulValue(msg.orientation, (msg.payload && msg.payload.orientation), node.orientation);
         
         // Zone parameters - handle both array (new format) and string (legacy format)
         console.log(`[GOTO-PLACE] Raw zone inputs:`, {
@@ -684,7 +686,15 @@ module.exports = function (RED) {
           dynamicEventData.description = zoneDescription;
         } else {
           // Regular waypoint description (existing behavior)
-          dynamicEventData.description = { waypoint: locationName };
+          const waypointDescription = { waypoint: locationName };
+          
+          // Add orientation if provided (optional parameter)
+          if (orientation !== undefined && orientation !== null && orientation !== '') {
+            waypointDescription.orientation = parseFloat(orientation);
+            console.log(`[GOTO-PLACE] Added orientation ${waypointDescription.orientation} radians to waypoint description`);
+          }
+          
+          dynamicEventData.description = waypointDescription;
         }
 
         // Set up callbacks for goal completion and feedback
