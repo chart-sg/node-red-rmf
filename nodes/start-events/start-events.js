@@ -56,7 +56,7 @@ module.exports = function (RED) {
     let rmfConfigReady = false;
     if (node.configNode) {
       node.configNode.on('rmf-ready', (readyInfo) => {
-        console.log('[START-EVENTS] RMF config ready, checking connection...');
+        // RMF config ready, checking connection silently
         rmfConfigReady = true;
         setStatus('yellow', 'ring', 'Connecting to RMF...');
         // Small delay to allow RMF context to fully initialize
@@ -355,6 +355,7 @@ module.exports = function (RED) {
         
         // Add RMF metadata for persistence through the flow
         msg.rmf_task_id = createResult.taskId;
+        msg.rmf_dynamic_event_seq = standbyResult.dynamicEventSeq;
         if (robotName) {
           msg.rmf_robot_name = robotName;
         }

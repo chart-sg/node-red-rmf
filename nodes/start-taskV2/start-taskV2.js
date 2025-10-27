@@ -56,7 +56,7 @@ module.exports = function (RED) {
     let rmfConfigReady = false;
     if (node.configNode) {
       node.configNode.on('rmf-ready', (readyInfo) => {
-        console.log('[START-TASKV2] RMF config ready, checking connection...');
+        // RMF config ready, checking connection silently
         rmfConfigReady = true;
         setStatus('yellow', 'ring', 'Connecting to RMF...');
         // Small delay to allow RMF context to fully initialize

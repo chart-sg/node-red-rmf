@@ -67,7 +67,7 @@ class RMFNodeBase {
     // Wait for RMF config to be ready
     if (this.configNode) {
       this.configNode.on('rmf-ready', (readyInfo) => {
-        console.log(`[${this.nodeType.toUpperCase()}] RMF config ready, checking connection...`);
+        // RMF config ready, checking connection silently
         this.rmfConfigReady = true;
         this.setStatus('yellow', 'ring', 'Connecting to RMF...');
         // Small delay to allow RMF context to fully initialize
