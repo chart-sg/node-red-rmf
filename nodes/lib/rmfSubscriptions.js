@@ -84,7 +84,7 @@ class RMFSubscriptions {
       
       // Use the correct QoS configuration that works with TRANSIENT_LOCAL
       // Get rclnodejs from SharedManager (required dependency)
-      const ros2Bridge = require('@chart/node-red-ros2-manager');
+      const ros2Bridge = require('@chart-sg/node-red-ros2-manager');
       const manager = ros2Bridge.getROS2Manager();
       const rclnodejs = manager.getRclnodejs();
       
@@ -343,7 +343,7 @@ class RMFSubscriptions {
       
       // Setup building map service client (kept for backward compatibility)
       // Note: We don't actually use rclnodejs directly here, just for consistency
-      const ros2Bridge = require('@chart/node-red-ros2-manager');
+      const ros2Bridge = require('@chart-sg/node-red-ros2-manager');
       const manager = ros2Bridge.getROS2Manager();
       // Verify SharedManager is available (no need to store rclnodejs here)
       manager.getRclnodejs();

@@ -11,11 +11,11 @@ This directory contains the core library modules for the RMF (Robot Middleware F
 | `rmfContextManager.js` | ✅ Active | Main entry point, module orchestration, and API facade | All other modules |
 | `rmfLifecycleManager.js` | ✅ Active | Component initialization and lifecycle orchestration | Core modules |
 | **Connection & Communication** |
-| `rmfConnection.js` | ✅ Active | ROS2 initialization, WebSocket connections, SharedManager integration | `@chart/node-red-ros2-manager` |
-| `ros2-bridge-interface.js` | ✅ Active | Interface layer to ROS2 SharedManager with fallback support | `@chart/node-red-ros2-manager` |
+| `rmfConnection.js` | ✅ Active | ROS2 initialization, WebSocket connections, SharedManager integration | `@chart-sg/node-red-ros2-manager` |
+| `ros2-bridge-interface.js` | ✅ Active | Interface layer to ROS2 SharedManager with fallback support | `@chart-sg/node-red-ros2-manager` |
 | **Action & Service Clients** |
-| `rmf-safe-action-client.js` | ✅ Active | SharedManager-based action client wrapper (eliminates spinning conflicts) | `@chart/node-red-ros2-manager` |
-| `rmf-safe-service-client.js` | ✅ Active | Safe service client wrapper with SharedManager integration | `@chart/node-red-ros2-manager` |
+| `rmf-safe-action-client.js` | ✅ Active | SharedManager-based action client wrapper (eliminates spinning conflicts) | `@chart-sg/node-red-ros2-manager` |
+| `rmf-safe-service-client.js` | ✅ Active | Safe service client wrapper with SharedManager integration | `@chart-sg/node-red-ros2-manager` |
 | **Task & Robot Management** |
 | `rmfTaskManager.js` | ✅ Active | RMF task operations, dynamic events, and robot coordination | `rmfCore.js`, action clients |
 | `rmfRobotManager.js` | ✅ Active | Robot state tracking, fleet management, and robot discovery | `rmfCore.js` |
@@ -95,7 +95,7 @@ This directory contains the core library modules for the RMF (Robot Middleware F
 ### **rmf-safe-action-client.js** - SharedManager-Based Action Client
 - **Purpose**: Safe action client wrapper using centralized SharedManager
 - **Key Features**:
-  - Uses `@chart/node-red-ros2-manager` for lifecycle management
+  - Uses `@chart-sg/node-red-ros2-manager` for lifecycle management
   - Eliminates spinning conflicts and nullptr errors
   - Maintains API compatibility with legacy code
   - Proper resource cleanup and coordination

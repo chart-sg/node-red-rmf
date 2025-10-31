@@ -13,21 +13,20 @@ This package provides reusable Node-RED custom nodes designed for RMF applicatio
 - **Multi-Plugin Compatible**: Works alongside `@chart-sg/node-red-ros2` and other Chart ROS2 plugins
 - **Production Ready**: No spinning conflicts, proper resource management
 
-## Quick Installation
+## Installation
 
 ```bash
 # 1. Source ROS2/RMF environment
 source /opt/ros/jazzy/setup.bash        # (or your ROS2 distro)
 source ~/rmf_ws/install/setup.bash      # (your RMF workspace)
 
-# 2. Install in Node-RED directory (with .tgz files)
+# 2. Install in Node-RED directory
 cd ~/.node-red
 npm install rclnodejs
-npm install ./chart-sg-node-red-ros2-manager-1.0.0.tgz
-npm install ./chart-sg-node-red-rmf-1.0.0.tgz
+npm install @chart-sg/node-red-rmf
 ```
 
-**Complete Installation Guide** - Multiple methods, troubleshooting, development setup: [INSTALLATION.md](./INSTALLATION.md)
+The `@chart-sg/node-red-ros2-manager` dependency is automatically installed.
 
 ## Prerequisites & Environment Setup
 

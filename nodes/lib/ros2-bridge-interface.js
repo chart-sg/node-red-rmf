@@ -2,32 +2,22 @@
  * ROS2 Manager Interface for RMF Plugin
  * 
  * This module provides a unified interface to the ROS2 management platform.
- * It abstracts the choice between using the shared manager or standalone rclnodejs.
+ * Uses the shared manager exclusively for consistency.
  */
 
+// Load the ROS2 manager (required dependency)
 let bridge = null;
-let rclnodejs = null;
-let useBridge = true;
-
-// Try to load the ROS2 manager first
 try {
-    bridge = require('@chart/node-red-ros2-manager');
-    console.log('[RMF-ROS2Manager] Successfully loaded @chart/node-red-ros2-manager');
+    bridge = require('@chart-sg/node-red-ros2-manager');
+    console.log('[RMF-ROS2Manager] Successfully loaded @chart-sg/node-red-ros2-manager');
 } catch (error) {
-    console.log('[RMF-ROS2Manager] Manager not available, falling back to rclnodejs:', error.message);
-    useBridge = false;
-    try {
-        rclnodejs = require('rclnodejs');
-        console.log('[RMF-ROS2Manager] Direct rclnodejs loaded as fallback');
-    } catch (rclError) {
-        console.error('[RMF-ROS2Manager] Failed to load rclnodejs:', rclError.message);
-        throw new Error('Neither ROS2 manager nor rclnodejs is available');
-    }
+    console.error('[RMF-ROS2Manager] Failed to load required @chart-sg/node-red-ros2-manager:', error.message);
+    throw new Error('@chart-sg/node-red-rmf requires @chart-sg/node-red-ros2-manager to be installed. Please install it with: npm install @chart-sg/node-red-ros2-manager');
 }
 
 /**
  * ROS2 Bridge Interface Class
- * Provides a unified interface for ROS2 operations using the bridge or fallback
+ * Provides a unified interface for ROS2 operations using SharedManager exclusively
  */
 class ROS2BridgeInterface {
     constructor() {
@@ -36,27 +26,18 @@ class ROS2BridgeInterface {
         this.node = null;
         this.nodeId = null;
         this.domain = null;
-        this.useBridge = !!bridge;
-        this.fallbackContext = null;
-        console.log(`[RMF-ROS2Manager] Interface created, using bridge: ${this.useBridge}`);
+        this.useBridge = true; // Always use bridge since it's required
+        console.log('[RMF-ROS2Manager] Interface created, using bridge: true');
     }
 
     /**
      * Get the rclnodejs instance for message operations
-     * Ensures compatibility between bridge and fallback modes
+     * Always uses SharedManager for consistency
      * @returns {Object} rclnodejs instance
      */
     getRclnodejs() {
-        if (this.useBridge && bridge) {
-            const manager = bridge.getROS2Manager();
-            return manager.getRclnodejs();
-        }
-        
-        if (!rclnodejs) {
-            throw new Error('rclnodejs is not available in fallback mode');
-        }
-        
-        return rclnodejs;
+        const manager = bridge.getROS2Manager();
+        return manager.getRclnodejs();
     }
 
     /**
@@ -82,45 +63,17 @@ class ROS2BridgeInterface {
             const domain = options.domainId || process.env.ROS_DOMAIN_ID || 42;
             this.domain = parseInt(domain);
 
-            if (this.useBridge) {
-                console.log(`[RMF-ROS2Manager] Initializing using bridge with domain ${this.domain}`);
-                
-                // Initialize the bridge
-                await bridge.initializeROS2({ domain: this.domain });
-                
-                // Create a node for RMF operations
-                const result = await bridge.createNode('node_red_rmf_manager');
-                this.nodeId = result.nodeId;
-                this.node = result.node;
-                
-                console.log(`[RMF-ROS2Manager] Bridge initialization complete, node ID: ${this.nodeId}`);
-            } else {
-                console.log(`[RMF-ROS2Manager] Initializing using direct rclnodejs with domain ${this.domain}`);
-                
-                // Set domain for rclnodejs
-                process.env.ROS_DOMAIN_ID = this.domain.toString();
-                
-                // Initialize rclnodejs directly
-                await rclnodejs.init();
-                this.node = rclnodejs.createNode('node_red_rmf_manager');
-                this.fallbackContext = { spinning: false };
-                
-                // Start spinning for fallback mode using per-node approach
-                setImmediate(() => {
-                    if (!this.fallbackContext.spinning) {
-                        try {
-                            // Use spinOnce instead of global spin for better reliability
-                            this.startPeriodicSpin();
-                            this.fallbackContext.spinning = true;
-                            console.log('[RMF-ROS2Manager] Fallback spinning started using spinOnce approach');
-                        } catch (error) {
-                            console.error('[RMF-ROS2Manager] Failed to start fallback spinning:', error);
-                        }
-                    }
-                });
-                
-                console.log('[RMF-ROS2Manager] Direct rclnodejs initialization complete');
-            }
+            console.log(`[RMF-ROS2Manager] Initializing using bridge with domain ${this.domain}`);
+            
+            // Initialize the bridge
+            await bridge.initializeROS2({ domain: this.domain });
+            
+            // Create a node for RMF operations
+            const result = await bridge.createNode('node_red_rmf_manager');
+            this.nodeId = result.nodeId;
+            this.node = result.node;
+            
+            console.log(`[RMF-ROS2Manager] Bridge initialization complete, node ID: ${this.nodeId}`);
 
             this.initialized = true;
             console.log('[RMF-ROS2Manager] ROS2 interface initialized successfully');
@@ -222,22 +175,15 @@ class ROS2BridgeInterface {
         try {
             console.log('[RMF-ROS2Manager] Shutting down ROS2 interface...');
 
-            if (this.useBridge && this.nodeId) {
+            if (this.nodeId) {
                 // Use bridge shutdown
                 await bridge.destroyNode(this.nodeId);
                 await bridge.shutdown();
-            } else if (this.node && !this.useBridge) {
-                // Direct rclnodejs shutdown
-                if (this.node.destroy) {
-                    this.node.destroy();
-                }
-                await rclnodejs.shutdown();
             }
 
             this.initialized = false;
             this.node = null;
             this.nodeId = null;
-            this.fallbackContext = null;
             
             console.log('[RMF-ROS2Manager] Shutdown complete');
         } catch (error) {
@@ -250,12 +196,7 @@ class ROS2BridgeInterface {
      * @param {Function} callback - Shutdown callback
      */
     onShutdown(callback) {
-        if (this.useBridge && bridge) {
-            bridge.onShutdown(callback);
-        } else {
-            // For fallback mode, we could store callbacks and call them during shutdown
-            console.warn('[RMF-ROS2Manager] Shutdown callbacks not supported in fallback mode');
-        }
+        bridge.onShutdown(callback);
     }
 }
 

@@ -1,8 +1,9 @@
 // File: nodes/lib/rmfContextManager.js
 // Get rclnodejs from SharedManager (required dependency)
-const ros2Bridge = require('@chart/node-red-ros2-manager');
+const ros2Bridge = require('@chart-sg/node-red-ros2-manager');
 const manager = ros2Bridge.getROS2Manager();
 const rclnodejs = manager.getRclnodejs();
+console.log('RMF: Using @chart-sg/node-red-ros2-manager for shared ROS2 management');
 
 const EventEmitter = require('events');
 

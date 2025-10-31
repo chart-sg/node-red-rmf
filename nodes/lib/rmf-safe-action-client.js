@@ -23,7 +23,7 @@ class SafeActionClient {
 
     try {
       // Get the shared ROS2 manager
-      const bridge = require('@chart/node-red-ros2-manager');
+      const bridge = require('@chart-sg/node-red-ros2-manager');
       this.bridge = bridge.getROS2Manager();
       
       if (!this.bridge || !this.bridge.initialized) {
