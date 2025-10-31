@@ -1,16 +1,16 @@
 # CHART Node-RED RMF Nodes
 
-A collection of Node-RED subflow modules for RMF (Robot Middleware Framework) integration, built on the Chart SharedManager architecture for reliable multi-plugin ROS2 operations.
+A collection of Node-RED custom nodes for RMF (Robot Middleware Framework) integration, built on the Chart SharedManager architecture for reliable multi-plugin ROS2 operations.
 
 ## Overview
 
-This package provides reusable Node-RED subflows designed for RMF applications. Each subflow is packaged as a proper Node-RED module that can be easily installed and used in Node-RED flows.
+This package provides reusable Node-RED custom nodes designed for RMF applications. Each node is packaged as a proper Node-RED module that can be easily installed and used in Node-RED flows.
 
 ### Key Features
 
-- **SharedManager Integration**: Built-in `@chart/node-red-ros2-manager` for reliable ROS2 operations
+- **SharedManager Integration**: Built-in `@chart-sg/node-red-ros2-manager` for reliable ROS2 operations
 - **RMF-Specific Nodes**: Fleet management, task dispatch, and coordination nodes
-- **Multi-Plugin Compatible**: Works alongside `@chart/node-red-ros2` and other Chart ROS2 plugins
+- **Multi-Plugin Compatible**: Works alongside `@chart-sg/node-red-ros2` and other Chart ROS2 plugins
 - **Production Ready**: No spinning conflicts, proper resource management
 
 ## Quick Installation
@@ -23,8 +23,8 @@ source ~/rmf_ws/install/setup.bash      # (your RMF workspace)
 # 2. Install in Node-RED directory (with .tgz files)
 cd ~/.node-red
 npm install rclnodejs
-npm install ./chart-node-red-ros2-manager-1.0.0.tgz
-npm install ./chart-node-red-rmf-1.0.0.tgz
+npm install ./chart-sg-node-red-ros2-manager-1.0.0.tgz
+npm install ./chart-sg-node-red-rmf-1.0.0.tgz
 ```
 
 **Complete Installation Guide** - Multiple methods, troubleshooting, development setup: [INSTALLATION.md](./INSTALLATION.md)
@@ -79,15 +79,15 @@ This package uses the **Chart SharedManager** architecture for conflict-free ROS
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                @chart/node-red-ros2-manager                 │
+│                @chart-sg/node-red-ros2-manager              │
 │              (Shared ROS2 Context Manager)                 │
 └─────────────────────┬───────────────────────────────────────┘
                       │
           ┌───────────┴──────────┐
           │                      │
 ┌─────────▼──────────┐  ┌────────▼─────────┐
-│ @chart/node-red-   │  │ @chart/node-red- │
-│ ros2               │  │ rmf              │
+│ @chart-sg/node-    │  │ @chart-sg/node-  │
+│ red-ros2           │  │ red-rmf          │
 │ (Educational)      │  │ (Production)     │
 └────────────────────┘  └──────────────────┘
 ```
@@ -102,13 +102,58 @@ This package uses the **Chart SharedManager** architecture for conflict-free ROS
 
 ### Test Node
 - **Category**: RMF
-- **Function**: A simple test node that demonstrates the subflow structure
+- **Function**: A simple test node that demonstrates the custom node structure
 - **Configuration**: Message text (default: "hello-word")
+
+### RMF Config
+- **Category**: Config
+- **Function**: Configuration node for RMF settings and connections
+- **Configuration**: API endpoints, authentication, fleet settings
+
+### Start Task V2
+- **Category**: RMF
+- **Function**: Initiates RMF tasks with version 2 API
+- **Configuration**: Task type, parameters, priority
+
+### Start Events
+- **Category**: RMF
+- **Function**: Publishes RMF start events to the system
+- **Configuration**: Event type, timing, metadata
+
+### Goto Place
+- **Category**: RMF
+- **Function**: Commands robots to navigate to specific locations
+- **Configuration**: Destination, fleet, robot selection
+
+### Perform Action
+- **Category**: RMF
+- **Function**: Executes specific actions on robots
+- **Configuration**: Action type, parameters, duration
+
+### Teleop
+- **Category**: RMF
+- **Function**: Enables teleoperation control of robots
+- **Configuration**: Control interface, safety limits
+
+### Cancel Task V2
+- **Category**: RMF
+- **Function**: Cancels active RMF tasks
+- **Configuration**: Task ID, cancellation reason
+
+### Cancel Events
+- **Category**: RMF
+- **Function**: Cancels scheduled RMF events
+- **Configuration**: Event ID, cancellation type
+
+### End Events
+- **Category**: RMF
+- **Function**: Handles RMF task completion events
+- **Configuration**: Event processing, notifications
 
 ## Compatibility & Usage
 
 - **SharedManager Required**: This package requires the ros2-manager for all ROS2 operations
-- **Multi-Plugin**: Works seamlessly with `@chart/node-red-ros2` and other Chart ROS2 plugins
+- **Multi-Plugin**: Works seamlessly with `@chart-sg/node-red-ros2` and other Chart ROS2 plugins
 - **Node-RED**: Hot deployment support, proper cleanup during redeployments
 - **Production Focus**: Designed for reliable fleet management and task coordination
 
@@ -116,7 +161,7 @@ This package uses the **Chart SharedManager** architecture for conflict-free ROS
 
 ```javascript
 // All RMF nodes automatically use SharedManager
-const manager = require('@chart/node-red-ros2-manager');
+const manager = require('@chart-sg/node-red-ros2-manager');
 // Manager is initialized automatically by the nodes
 // No manual setup required for users
 ```
@@ -127,59 +172,35 @@ const manager = require('@chart/node-red-ros2-manager');
 ```
 node-red-chart-rmf/
 ├── package.json           # NPM package configuration
-├── index.js              # Main entry point with dynamic loader
+├── index.js              # Main entry point
 ├── README.md             # This file
-├── nodes/                # Individual subflow modules
-│   ├── test-node.js      # Test node wrapper
-│   ├── test-node.json    # Test node subflow definition
-│   └── [future-nodes]    # Additional subflows
+├── nodes/                # Individual custom nodes
+│   ├── test-node.js      # Test node implementation
+│   ├── rmf-config/       # RMF configuration node
+│   ├── start-taskV2/     # Task initiation node
+│   ├── start-events/     # Event publishing node
+│   ├── goto-place/       # Navigation command node
+│   ├── perform-action/   # Action execution node
+│   ├── teleop/           # Teleoperation node
+│   ├── cancel-taskV2/    # Task cancellation node
+│   ├── cancel-events/    # Event cancellation node
+│   └── end-events/       # Event completion node
 └── scripts/              # Automation tools
-    ├── add-subflow.js    # Script to add new subflows
-    └── validate-subflows.js # Script to validate all subflows
+    └── check-rmf-environment.js # RMF environment validation
+```
 ```
 
-### Adding New Subflows
+### Environment Validation
 
-You can add new subflows using the automated script:
+The RMF environment validation script checks:
+- RMF packages are available in ROS2 environment
+- Required RMF message types are generated in rclnodejs
+- Proper ROS2/RMF workspace sourcing
 
 ```bash
-# Add a new subflow from Node-RED export
-npm run add-subflow "My New RMF Node" exportjson/subflow.json
-
-# For nested subflows use add-nested-subflow instead
-npm run add-nested-subflow "My New RMF Node" exportjson/nested-subflow.json
+# Check RMF environment setup
+npm run check-rmf
 ```
-
-The script handles both:
-- **Raw Node-RED exports** (array format with subflow instance)
-- **Pre-formatted subflows** (single object with flow property)
-
-### Manual Steps (if needed)
-
-1. **Export from Node-RED**:
-   - Create your subflow in Node-RED
-   - Add an instance to the workspace
-   - Export the selected nodes as JSON
-   - Save inside /exportjson folder
-
-2. **Add to project**:
-   - Use the add-subflow script (recommended)
-   - Or manually follow the steps in the script
-
-3. **Validate**:
-   ```bash
-   npm run validate
-   ```
-
-### Validation
-
-The validation script checks:
-- All JSON files are valid subflows
-- Each subflow has required properties (id, name, flow)
-- No duplicate IDs
-- Corresponding JS wrapper files exist
-- All nodes are registered in package.json
-- No orphaned files
 
 ### Testing Locally
 
@@ -192,21 +213,21 @@ npm install . --prefix ~/.node-red
 
 ## Scripts
 
-- `npm run validate` - Validate all subflows
-- `npm run add-subflow "Name" file.json` - Add a new subflow
+- `npm run check-rmf` - Validate RMF environment setup
 - `npm test` - Run tests (placeholder)
 
 ## Dependencies
 
-- **@chart/node-red-ros2-manager** - Shared ROS2 context management (automatically installed)
-- **rclnodejs** - ROS2 Node.js bindings (automatically installed)
-- Node-RED >= 1.3.0 (for subflow module support)
-- Node.js >= 12.0.0
+- **@chart-sg/node-red-ros2-manager** - Shared ROS2 context management (automatically installed)
+- **axios** - HTTP client for RMF API communication
+- **socket.io-client** - WebSocket communication with RMF systems
+- Node-RED >= 1.3.0
+- Node.js >= 14.0.0
 
 ## 🔗 Related Packages
 
-- [`@chart/node-red-ros2-manager`](https://github.com/chart-sg/node-red-ros2-manager) - Core ROS2 context manager
-- [`@chart/node-red-ros2`](https://github.com/chart-sg/node-red-ros2) - General ROS2 nodes for Node-RED
+- [`@chart-sg/node-red-ros2-manager`](https://github.com/chart-sg/node-red-ros2-manager) - Core ROS2 context manager
+- [`@chart-sg/node-red-ros2`](https://github.com/chart-sg/node-red-ros2) - General ROS2 nodes for Node-RED
 
 ## License
 
@@ -216,13 +237,13 @@ ISC
 
 1. Fork the repository
 2. Create your feature branch
-3. Add your subflow using the provided scripts
-4. Validate your changes: `npm run validate`
+3. Add your custom nodes following the existing patterns
+4. Validate RMF environment: `npm run check-rmf`
 5. Submit a pull request
 
 ## Notes
 
-- Each subflow must have a unique ID
-- Subflows are packaged following the [Node-RED subflow module pattern](https://nodered.org/docs/creating-nodes/subflow-modules)
-- The dynamic loader automatically discovers and loads all subflows in the `nodes/` directory
-- All subflows appear in the "RMF" category in Node-RED's palette 
+- Each node has a unique implementation for specific RMF functionality
+- Nodes are registered in package.json following Node-RED custom node patterns
+- All nodes appear in the "RMF" category in Node-RED's palette
+- SharedManager architecture ensures reliable multi-plugin operation 

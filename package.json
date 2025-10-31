@@ -1,5 +1,5 @@
 {
-  "name": "@chart/node-red-rmf",
+  "name": "@chart-sg/node-red-rmf",
   "version": "1.0.0",
   "description": "RMF (Robot Middleware Framework) nodes for Node-RED with SharedManager architecture.",
   "license": "ISC",
@@ -33,7 +33,7 @@
     "ros2"
   ],
   "dependencies": {
-    "@chart/node-red-ros2-manager": "file:../node-red-ros2-manager",
+    "@chart-sg/node-red-ros2-manager": "^1.0.0",
     "axios": "^1.10.0",
     "socket.io-client": "^4.0.0"
   },
@@ -55,10 +55,8 @@
   "scripts": {
     "test": "echo \"No tests yet\" && exit 0",
     "lint": "echo \"No linting yet\" && exit 0",
-    "validate": "node scripts/validate-subflows.js",
-    "add-subflow": "node scripts/add-subflow.js",
     "check-rmf": "node scripts/check-rmf-environment.js",
     "postinstall": "echo '\n🤖 RMF Node-RED package installed!\n\n⚠️  IMPORTANT: RMF nodes require proper ROS2 environment setup.\n\n🔧 Quick Setup:\n   1. Download setup script: curl -O https://raw.githubusercontent.com/chart-sg/node-red-rmf/main/setup-rmf-nodes.sh\n   2. Source ROS2: source /opt/ros/jazzy/setup.bash\n   3. Source RMF: source ~/rmf_ws/install/setup.bash\n   4. Run setup: cd ~/.node-red && bash setup-rmf-nodes.sh\n\n💡 After setup, restart Node-RED with sourced environment.\n📚 See README for detailed instructions.\n'",
-    "prepublishOnly": "npm run test && npm run lint && npm run validate"
+    "prepublishOnly": "npm run test && npm run lint"
   }
 }
