@@ -2,6 +2,10 @@
 
 A collection of Node-RED custom nodes for RMF (Robot Middleware Framework) integration, built on the Chart SharedManager architecture for reliable multi-plugin ROS2 operations.
 
+## ⚠️ IMPORTANT: Terminal Installation Required
+
+**Cannot be installed via Node-RED Palette Manager.** This package requires terminal installation with ROS2/RMF environment sourced because rclnodejs needs access to ROS2 libraries during installation.
+
 ## Overview
 
 This package provides reusable Node-RED custom nodes designed for RMF applications. Each node is packaged as a proper Node-RED module that can be easily installed and used in Node-RED flows.
