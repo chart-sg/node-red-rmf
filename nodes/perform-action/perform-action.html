@@ -163,8 +163,8 @@
       action_description: { value: '' }
     },
     inputs: 1,
-    outputs: 2,
-    outputLabels: ["success", "failed"],
+    outputs: 3,
+    outputLabels: ["success", "failed", "status"],
     icon: 'rmf.svg',
     label: function () {
       return this.name || 'Perform-action';
@@ -297,7 +297,7 @@
         <dt>payload.status <span class="property-type">string</span></dt>
         <dd>"completed" when action is successfully executed</dd>
         <dt>payload.action <span class="property-type">string</span></dt>
-        <dd>"perform_action" - indicates this was a perform action operation</dd>
+        <dd>"perform-action" - indicates this was a perform action operation</dd>
         <dt>payload.action_category <span class="property-type">string</span></dt>
         <dd>The action category that was executed</dd>
         <dt>payload.robot_name <span class="property-type">string</span></dt>
@@ -316,6 +316,22 @@
         <dd>"failed", "error" on failure</dd>
         <dt>payload.reason <span class="property-type">string</span></dt>
         <dd>Description of the failure</dd>
+      </dl>
+    </li>
+    <li>Status
+      <dl class="message-properties">
+        <dt>payload.status <span class="property-type">string</span></dt>
+        <dd>Current status of the action (e.g., "underway", "standby")</dd>
+        <dt>payload.action <span class="property-type">string</span></dt>
+        <dd>"perform-action" - indicates this was a perform action operation</dd>
+        <dt>payload.rmf_robot_mode <span class="property-type">number</span></dt>
+        <dd>Current robot mode integer from RMF system (if available)</dd>
+        <dt>rmf_robot_mode <span class="property-type">number</span></dt>
+        <dd>Current robot mode integer also available at message level for redundancy</dd>
+        <dt>payload.feedback <span class="property-type">object</span></dt>
+        <dd>RMF feedback data with detailed status information</dd>
+        <dt>payload.timestamp <span class="property-type">string</span></dt>
+        <dd>ISO timestamp of the status update</dd>
       </dl>
     </li>
   </ol>

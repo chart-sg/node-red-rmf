@@ -76,5 +76,7 @@ module.exports = function(RED) {
         });
     }
 
-    RED.nodes.registerType("teleop", TeleopNode);
+    RED.nodes.registerType("teleop", TeleopNode, {
+        outputs: 3  // Success, Failed, Status
+    });
 };

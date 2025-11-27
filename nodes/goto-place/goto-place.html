@@ -1009,8 +1009,20 @@
     </li>
     <li>Status
       <dl class="message-properties">
-        <dt>payload <span class="property-type">object</span></dt>
-        <dd>Ongoing status updates during task execution.</dd>
+        <dt>payload.status <span class="property-type">string</span></dt>
+        <dd>Current status of the goto operation (e.g., "underway", "standby")</dd>
+        <dt>payload.rmf_robot_name <span class="property-type">string</span></dt>
+        <dd>The robot name executing the task</dd>
+        <dt>payload.rmf_robot_fleet <span class="property-type">string</span></dt>
+        <dd>The robot fleet executing the task</dd>
+        <dt>payload.location_name <span class="property-type">string</span></dt>
+        <dd>The target location name</dd>
+        <dt>payload.rmf_robot_mode <span class="property-type">number</span></dt>
+        <dd>Current robot mode integer from RMF system (if available)</dd>
+        <dt>payload.rmf_dynamic_event_seq <span class="property-type">number</span></dt>
+        <dd>The dynamic event sequence number</dd>
+        <dt>payload.timestamp <span class="property-type">string</span></dt>
+        <dd>ISO timestamp of the status update</dd>
       </dl>
     </li>
   </ol>

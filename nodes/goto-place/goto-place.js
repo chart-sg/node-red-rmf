@@ -7,6 +7,50 @@ module.exports = function (RED) {
     RED.nodes.createNode(this, config);
     const node = this;
 
+    // Helper function to get robot mode from RMF context manager (preferred approach)
+    function getRobotMode(robotName, robotFleet, taskId) {
+      try {
+        // Method 1: Use rmfContextManager.getRobotContext() - BEST APPROACH
+        if (robotName && robotFleet) {
+          const robotContext = rmfContextManager.getRobotContext(robotName, robotFleet);
+          if (robotContext && robotContext.mode && typeof robotContext.mode.mode === 'number') {
+            console.log(`[GOTO-PLACE] Found robot mode ${robotContext.mode.mode} for ${robotName}/${robotFleet} via context manager`);
+            return robotContext.mode.mode;
+          }
+        }
+
+        // Method 2: Search all robots (useful when robot name/fleet unknown or for task_id lookup)
+        if (taskId || robotName) {
+          const allRobots = rmfContextManager.getAllRobots();
+          if (allRobots && allRobots.length > 0) {
+            // First try by task_id if available
+            if (taskId) {
+              const robot = allRobots.find(r => r.task_id === taskId);
+              if (robot && robot.mode && typeof robot.mode.mode === 'number') {
+                console.log(`[GOTO-PLACE] Found robot mode ${robot.mode.mode} for task ${taskId} via getAllRobots`);
+                return robot.mode.mode;
+              }
+            }
+            
+            // Then try by name/fleet combination
+            if (robotName && robotFleet) {
+              const robot = allRobots.find(r => r.name === robotName && r.fleet === robotFleet);
+              if (robot && robot.mode && typeof robot.mode.mode === 'number') {
+                console.log(`[GOTO-PLACE] Found robot mode ${robot.mode.mode} for ${robotName}/${robotFleet} via getAllRobots`);
+                return robot.mode.mode;
+              }
+            }
+          }
+        }
+
+        console.log(`[GOTO-PLACE] Robot mode not found for ${robotName}/${robotFleet}/${taskId}`);
+        return null;
+      } catch (error) {
+        console.error('[GOTO-PLACE] Error getting robot mode:', error);
+        return null;
+      }
+    }
+
     node.robot_name = config.robot_name;
     node.robot_fleet = config.robot_fleet;
     node.location_name = config.location_name;
@@ -740,6 +784,13 @@ module.exports = function (RED) {
               timestamp: feedbackData.timestamp
             };
             
+            // Add robot mode to both payload and msg for redundancy
+            const robotMode = getRobotMode(robotName, robotFleet, taskId);
+            if (robotMode !== null) {
+              statusMsg.payload.rmf_robot_mode = robotMode;  // In payload
+              statusMsg.rmf_robot_mode = robotMode;          // In msg for redundancy
+            }
+            
             // Preserve RMF metadata in status messages too
             statusMsg.rmf_task_id = taskId;
             statusMsg.rmf_robot_name = robotName;
@@ -783,6 +834,14 @@ module.exports = function (RED) {
             rmf_dynamic_event_seq: dynamicEventSeq,
             timestamp: new Date().toISOString()
           };
+          
+          // Add robot mode to both payload and msg for redundancy
+          const robotMode = getRobotMode(robotName, robotFleet, taskId);
+          if (robotMode !== null) {
+            statusMsg.payload.rmf_robot_mode = robotMode;  // In payload
+            statusMsg.rmf_robot_mode = robotMode;          // In msg for redundancy
+          }
+          
           send([null, null, statusMsg]); // Send to status output
         }
 

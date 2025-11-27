@@ -163,8 +163,8 @@
       teleop_duration: { value: 0 }
     },
     inputs: 1,
-    outputs: 2,
-    outputLabels: ["success", "failed"],
+    outputs: 3,
+    outputLabels: ["success", "failed", "status"],
     icon: 'rmf.svg',
     label: function () {
       return this.name || 'Teleop';
@@ -289,6 +289,24 @@
         <dd>"failed" on failure, "error" on exception</dd>
         <dt>payload.reason <span class="property-type">string</span></dt>
         <dd>Description of the failure</dd>
+      </dl>
+    </li>
+    <li>Status
+      <dl class="message-properties">
+        <dt>payload.status <span class="property-type">string</span></dt>
+        <dd>Current status of the teleop operation (e.g., "underway", "standby")</dd>
+        <dt>payload.action <span class="property-type">string</span></dt>
+        <dd>"teleop" - indicates this was a teleop operation</dd>
+        <dt>payload.rmf_robot_mode <span class="property-type">number</span></dt>
+        <dd>Current robot mode integer from RMF system (if available)</dd>
+        <dt>rmf_robot_mode <span class="property-type">number</span></dt>
+        <dd>Current robot mode integer also available at message level for redundancy</dd>
+        <dt>rmf_robot_mode <span class="property-type">number</span></dt>
+        <dd>Current robot mode integer also available at message level for redundancy</dd>
+        <dt>payload.feedback <span class="property-type">object</span></dt>
+        <dd>RMF feedback data with detailed status information</dd>
+        <dt>payload.timestamp <span class="property-type">string</span></dt>
+        <dd>ISO timestamp of the status update</dd>
       </dl>
     </li>
   </ol>

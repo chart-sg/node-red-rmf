@@ -96,5 +96,7 @@ module.exports = function(RED) {
         });
     }
 
-    RED.nodes.registerType("perform-action", PerformActionNode);
+    RED.nodes.registerType("perform-action", PerformActionNode, {
+        outputs: 3  // Success, Failed, Status
+    });
 };

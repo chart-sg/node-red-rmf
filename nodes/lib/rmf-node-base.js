@@ -388,6 +388,14 @@ class RMFNodeBase {
         onFeedback: (feedback) => {
           if (feedback && feedback.status) {
             this.setStatus('blue', 'dot', `${this.nodeType}: ${feedback.status}`);
+            
+            // Send status update with robot mode
+            this.sendStatus(this.currentMsg, {
+              status: feedback.status,
+              action: this.nodeType,
+              feedback: feedback,
+              timestamp: new Date().toISOString()
+            });
           }
         }
       };
@@ -412,13 +420,64 @@ class RMFNodeBase {
    */
   sendError(statusText, errorReason, action = this.nodeType) {
     this.setStatus('red', 'dot', statusText);
+    // Send on second output: [success, failed, status]
     this.node.send([null, { 
       payload: { 
         status: 'error', 
         reason: errorReason,
         action: action
       } 
-    }]);
+    }, null]);
+  }
+
+  /**
+   * Get robot mode from RMF context manager (preferred approach)
+   * @param {string} robotName - Robot name
+   * @param {string} robotFleet - Robot fleet
+   * @param {string} taskId - Task ID (fallback identifier)
+   * @returns {number|null} Robot mode integer or null if not found
+   */
+  getRobotMode(robotName, robotFleet, taskId) {
+    try {
+      // Method 1: Use rmfContextManager.getRobotContext() - BEST APPROACH
+      if (robotName && robotFleet) {
+        const robotContext = rmfContextManager.getRobotContext(robotName, robotFleet);
+        if (robotContext && robotContext.mode && typeof robotContext.mode.mode === 'number') {
+          console.log(`[${this.nodeType.toUpperCase()}] Found robot mode ${robotContext.mode.mode} for ${robotName}/${robotFleet} via context manager`);
+          return robotContext.mode.mode;
+        }
+      }
+
+      // Method 2: Search all robots (useful when robot name/fleet unknown or for task_id lookup)
+      if (taskId || robotName) {
+        const allRobots = rmfContextManager.getAllRobots();
+        if (allRobots && allRobots.length > 0) {
+          // First try by task_id if available
+          if (taskId) {
+            const robot = allRobots.find(r => r.task_id === taskId);
+            if (robot && robot.mode && typeof robot.mode.mode === 'number') {
+              console.log(`[${this.nodeType.toUpperCase()}] Found robot mode ${robot.mode.mode} for task ${taskId} via getAllRobots`);
+              return robot.mode.mode;
+            }
+          }
+          
+          // Then try by name/fleet combination
+          if (robotName && robotFleet) {
+            const robot = allRobots.find(r => r.name === robotName && r.fleet === robotFleet);
+            if (robot && robot.mode && typeof robot.mode.mode === 'number') {
+              console.log(`[${this.nodeType.toUpperCase()}] Found robot mode ${robot.mode.mode} for ${robotName}/${robotFleet} via getAllRobots`);
+              return robot.mode.mode;
+            }
+          }
+        }
+      }
+
+      console.log(`[${this.nodeType.toUpperCase()}] Robot mode not found for ${robotName}/${robotFleet}/${taskId}`);
+      return null;
+    } catch (error) {
+      console.error(`[${this.nodeType.toUpperCase()}] Error getting robot mode:`, error);
+      return null;
+    }
   }
 
   /**
@@ -438,7 +497,28 @@ class RMFNodeBase {
       successMsg.rmf_dynamic_event_seq = params.dynamicEventSeq;
     }
     
-    this.node.send([successMsg, null]);
+    // Send on first output: [success, failed, status]
+    this.node.send([successMsg, null, null]);
+  }
+
+  /**
+   * Send status response
+   * @param {Object} msg - Original message
+   * @param {Object} statusPayload - Status payload
+   */
+  sendStatus(msg, statusPayload) {
+    const statusMsg = Object.assign({}, msg, { payload: statusPayload });
+    
+    // Add robot mode to both payload and msg for redundancy
+    const params = this.extractRMFParameters(msg);
+    const robotMode = this.getRobotMode(params.robotName, params.robotFleet, params.taskId);
+    if (robotMode !== null) {
+      statusMsg.payload.rmf_robot_mode = robotMode;  // In payload
+      statusMsg.rmf_robot_mode = robotMode;          // In msg for redundancy
+    }
+    
+    // Send on third output: [success, failed, status]
+    this.node.send([null, null, statusMsg]);
   }
 
   /**
