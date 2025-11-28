@@ -25,11 +25,14 @@
       // Local RMF Form Utilities for start-events
       const StartEventsFormUtils = {
         populateRobotDropdown: function(options = {}) {
-          const { node, selectId = 'node-input-robot_name', placeholder = 'Use msg.rmf_robot_name', valueProperty = 'robot_name' } = options;
+          const { node, selectId = 'node-input-robot_name', placeholder = 'User defined (use msg.rmf_robot_name)', valueProperty = 'robot_name' } = options;
           const select = $(`#${selectId}`);
           const currentValue = node.isLoaded ? select.val() : node[valueProperty];
           
-          select.empty().append(`<option value="">${placeholder}</option>`);
+          select.empty()
+            .append(`<option value="">${placeholder}</option>`)
+            .append('<option value="__RMF_DEFINED__">RMF defined</option>')
+            .append('<option value="__AUTO_DEFINED__">Auto defined (use available robot)</option>');
           
           if (node.rmfData && node.rmfData.robots && node.rmfData.robots.length > 0) {
             node.rmfData.robots.forEach(robot => {
@@ -41,11 +44,14 @@
         },
 
         populateFleetDropdown: function(options = {}) {
-          const { node, selectId = 'node-input-robot_fleet', placeholder = 'Use msg.rmf_robot_fleet', valueProperty = 'robot_fleet' } = options;
+          const { node, selectId = 'node-input-robot_fleet', placeholder = 'User defined (use msg.rmf_robot_fleet)', valueProperty = 'robot_fleet' } = options;
           const select = $(`#${selectId}`);
           const currentValue = node.isLoaded ? select.val() : node[valueProperty];
           
-          select.empty().append(`<option value="">${placeholder}</option>`);
+          select.empty()
+            .append(`<option value="">${placeholder}</option>`)
+            .append('<option value="__RMF_DEFINED__">RMF defined</option>')
+            .append('<option value="__AUTO_DEFINED__">Auto defined (use available fleet)</option>');
           
           if (node.rmfData && node.rmfData.fleets && node.rmfData.fleets.length > 0) {
             node.rmfData.fleets.forEach(fleet => {
@@ -77,38 +83,41 @@
           // Fleet selection change handler
           fleetSelect.off('change').on('change', function() {
             const selectedFleet = $(this).val();
-            const currentRobot = robotSelect.val();
+            const currentRobotSelection = robotSelect.val();
             
-            if (currentRobot && selectedFleet && node.rmfData && node.rmfData.robots) {
-              const robot = node.rmfData.robots.find(r => r.name === currentRobot);
+            // Only reset robot selection if it's a specific robot that doesn't belong to the new fleet
+            if (currentRobotSelection && 
+                currentRobotSelection !== '' && 
+                currentRobotSelection !== '__RMF_DEFINED__' && 
+                currentRobotSelection !== '__AUTO_DEFINED__' && 
+                selectedFleet && 
+                node.rmfData && 
+                node.rmfData.robots) {
+              
+              const robot = node.rmfData.robots.find(r => r.name === currentRobotSelection);
               if (robot && robot.fleet !== selectedFleet) {
-                robotSelect.val('');
+                // Robot doesn't belong to selected fleet, reset to user defined
+                currentRobotSelection = '';
               }
             }
             
-            // Filter robots by fleet
-            if (selectedFleet && selectedFleet !== '') {
-              robotSelect.empty().append('<option value="">Use msg.rmf_robot_name</option>');
-              if (node.rmfData && node.rmfData.robots) {
-                node.rmfData.robots.forEach(robot => {
-                  if (robot.fleet === selectedFleet) {
-                    robotSelect.append(`<option value="${robot.name}" data-fleet="${robot.fleet}">${robot.name} (${robot.fleet})</option>`);
-                  }
-                });
-              }
-              const robotFromFleet = node.rmfData.robots ? node.rmfData.robots.find(r => r.name === currentRobot && r.fleet === selectedFleet) : null;
-              if (robotFromFleet) {
-                robotSelect.val(currentRobot);
-              }
-            } else {
-              robotSelect.empty().append('<option value="">Use msg.rmf_robot_name</option>');
-              if (node.rmfData && node.rmfData.robots) {
-                node.rmfData.robots.forEach(robot => {
+            // Repopulate dropdown with current fleet filter
+            robotSelect.empty()
+              .append('<option value="">User defined (use msg.rmf_robot_name)</option>')
+              .append('<option value="__RMF_DEFINED__">RMF defined</option>')
+              .append('<option value="__AUTO_DEFINED__">Auto defined</option>');
+            
+            // Add robots from selected fleet (or all robots if no fleet selected)
+            if (node.rmfData && node.rmfData.robots) {
+              node.rmfData.robots.forEach(robot => {
+                if (!selectedFleet || selectedFleet === '' || robot.fleet === selectedFleet) {
                   robotSelect.append(`<option value="${robot.name}" data-fleet="${robot.fleet}">${robot.name} (${robot.fleet})</option>`);
-                });
-              }
-              robotSelect.val(currentRobot);
+                }
+              });
             }
+            
+            // Restore the robot selection (preserving auto-detect modes)
+            robotSelect.val(currentRobotSelection);
           });
         },
 
@@ -211,14 +220,18 @@
   <div class="form-row">
     <label for="node-input-robot_name">Robot Name</label>
     <select id="node-input-robot_name" style="width: 100%;">
-      <option value="">Use msg.rmf_robot_name</option>
+      <option value="">User defined (use msg.rmf_robot_name)</option>
+      <option value="__RMF_DEFINED__">RMF defined</option>
+      <option value="__AUTO_DEFINED__">Auto defined</option>
     </select>
   </div>
   
   <div class="form-row">
     <label for="node-input-robot_fleet">Robot Fleet</label>
     <select id="node-input-robot_fleet" style="width: 100%;">
-      <option value="">Use msg.rmf_robot_fleet</option>
+      <option value="">User defined (use msg.rmf_robot_fleet)</option>
+      <option value="__RMF_DEFINED__">RMF defined</option>
+      <option value="__AUTO_DEFINED__">Auto defined</option>
     </select>
   </div>
   
@@ -251,10 +264,10 @@
     • Use "Refresh Data" button if dropdowns are empty<br/><br/>
     
     <b>Usage:</b><br/>
-    • Robot name and fleet are required<br/>
+    • Select robot assignment mode: User defined, RMF defined, or Auto defined<br/>
     • Connect the success output to a goto-place node<br/>
     • The node will create a new RMF task and wait for it to reach standby status<br/>
-    • Use "Use msg.xxx" dropdown options to pass values via message properties
+    • Use "User defined" mode to pass robot name via msg.rmf_robot_name
   </div>
 </script>
 
@@ -264,10 +277,10 @@
   <h3>Configuration</h3>
   <dl class="message-properties">
     <dt>Robot Name <span class="property-type">string</span></dt>
-    <dd>The name of the robot (required). Select from dropdown or use "Use msg.rmf_robot_name" to pass via message.</dd>
+    <dd>Robot selection mode: "User defined" (requires msg.rmf_robot_name), "RMF defined" (RMF chooses robot), "Auto defined" (internal logic selects available robot), or select specific robot from dropdown.</dd>
     
     <dt>Robot Fleet <span class="property-type">string</span></dt>
-    <dd>The fleet the robot belongs to (required). Auto-selected when robot is chosen. Select from dropdown or use "Use msg.rmf_robot_fleet" to pass via message.</dd>
+    <dd>Fleet selection mode: "User defined" (requires msg.rmf_robot_fleet), "RMF defined" (RMF chooses fleet), "Auto defined" (internal logic selects available fleet), or select specific fleet from dropdown. Auto-selected when specific robot is chosen.</dd>
     
     <dt>Estimate <span class="property-type">object</span></dt>
     <dd>JSON object containing task estimates (optional). Example: {"duration": 300}</dd>

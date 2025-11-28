@@ -107,6 +107,52 @@ module.exports = function (RED) {
       if (done) done();
     });
 
+    // Function to find an available robot
+    function findAvailableRobot(preferredFleet = null) {
+      try {
+        const rmfData = rmfContextManager.getRMFData();
+        if (!rmfData || !rmfData.robots || rmfData.robots.length === 0) {
+          console.log(`[START-EVENTS] No robots available in RMF data`);
+          return null;
+        }
+
+        let availableRobots = rmfData.robots;
+
+        // Filter by preferred fleet if specified
+        if (preferredFleet) {
+          availableRobots = rmfData.robots.filter(robot => robot.fleet === preferredFleet);
+          if (availableRobots.length === 0) {
+            console.log(`[START-EVENTS] No robots found in preferred fleet: ${preferredFleet}`);
+            return null;
+          }
+        }
+
+        // Find robots without active dynamic event tasks
+        for (const robot of availableRobots) {
+          const robotContext = rmfContextManager.getRobotContext(robot.name, robot.fleet);
+          
+          // Check if robot has an active RMF task with dynamic events
+          const hasActiveTask = robotContext && 
+                               robotContext.task_id && 
+                               robotContext.dynamic_event_seq && 
+                               robotContext.dynamic_event_status && 
+                               robotContext.dynamic_event_status !== 'completed';
+          
+          if (!hasActiveTask) {
+            console.log(`[START-EVENTS] Found available robot: ${robot.name} (${robot.fleet})`);
+            return robot;
+          }
+        }
+
+        // If no robot without active task found, return the first robot
+        console.log(`[START-EVENTS] All robots have active tasks, selecting first robot: ${availableRobots[0].name} (${availableRobots[0].fleet})`);
+        return availableRobots[0];
+      } catch (error) {
+        console.error(`[START-EVENTS] Error finding available robot:`, error);
+        return null;
+      }
+    }
+
     node.on('input', async (msg, send, done) => {
       try {
         // Check RMF connection
@@ -125,8 +171,78 @@ module.exports = function (RED) {
         let robotFleet = msg.rmf_robot_fleet || msg.robot_fleet || node.robot_fleet;
         let estimate = node.estimate || msg.estimate || '{}';
 
-        // Note: robotName and robotFleet are optional - if both are empty, 
-        // will use general dispatch_task_request
+        // Handle different robot and fleet selection modes
+        const robotSelectionMode = node.robot_name;
+        const fleetSelectionMode = node.robot_fleet;
+        
+        // Handle fleet selection mode first
+        if (fleetSelectionMode === '') {
+          // User defined mode - use msg input if available
+          robotFleet = msg.rmf_robot_fleet || msg.robot_fleet || null;
+        } else if (fleetSelectionMode === '__RMF_DEFINED__') {
+          // RMF defined - let RMF choose fleet
+          robotFleet = null;
+          console.log(`[START-EVENTS] Using RMF defined fleet mode`);
+        } else if (fleetSelectionMode === '__AUTO_DEFINED__') {
+          // Auto defined - use internal logic to find available fleet
+          const rmfData = rmfContextManager.getRMFData();
+          if (rmfData && rmfData.robots && rmfData.robots.length > 0) {
+            // Extract unique fleets from robots data
+            const availableFleets = [...new Set(rmfData.robots.map(robot => robot.fleet))];
+            if (availableFleets.length > 0) {
+              robotFleet = availableFleets[0]; // Choose first available fleet
+              console.log(`[START-EVENTS] Auto defined fleet: ${robotFleet} (from ${availableFleets.length} available fleets)`);
+            } else {
+              robotFleet = null;
+              console.log(`[START-EVENTS] Auto defined fleet mode - no fleets found in robot data, using null`);
+            }
+          } else {
+            robotFleet = null;
+            console.log(`[START-EVENTS] Auto defined fleet mode - no robots available, using null`);
+          }
+        } else {
+          // Specific fleet selected from dropdown
+          robotFleet = fleetSelectionMode;
+        }
+        
+        // Handle robot selection mode
+        if (robotSelectionMode === '') {
+          // User defined mode - requires msg.rmf_robot_name
+          if (!msg.rmf_robot_name && !msg.robot_name) {
+            setStatus('red', 'ring', 'Missing robot name');
+            msg.payload = { 
+              status: 'failed', 
+              reason: 'User defined mode requires msg.rmf_robot_name to be provided' 
+            };
+            send([null, msg]); // Send to failed output
+            return done();
+          }
+          robotName = msg.rmf_robot_name || msg.robot_name;
+        } else if (robotSelectionMode === '__RMF_DEFINED__') {
+          // RMF defined - let RMF choose robot within fleet (if specified)
+          robotName = null; // Always null for RMF-defined
+          // Keep robotFleet if specified, otherwise null for completely open dispatch
+          console.log(`[START-EVENTS] Using RMF defined mode${robotFleet ? ` within fleet: ${robotFleet}` : ' (any fleet)'}`);
+        } else if (robotSelectionMode === '__AUTO_DEFINED__') {
+          // Auto defined - use internal logic to find available robot
+          const availableRobot = findAvailableRobot(robotFleet);
+          if (!availableRobot) {
+            setStatus('red', 'ring', 'No available robot');
+            msg.payload = { 
+              status: 'failed', 
+              reason: 'No available robots found' + (robotFleet ? ` in fleet: ${robotFleet}` : '')
+            };
+            send([null, msg]); // Send to failed output
+            return done();
+          }
+          robotName = availableRobot.name;
+          robotFleet = availableRobot.fleet; // Update fleet in case it was auto-selected
+          console.log(`[START-EVENTS] Auto defined robot: ${robotName} (${robotFleet})`);
+        } else {
+          // Specific robot selected from dropdown
+          robotName = robotSelectionMode;
+          // robotFleet should be from msg or config
+        }
 
         // Validate estimate is valid JSON
         if (typeof estimate === 'string') {
@@ -144,16 +260,19 @@ module.exports = function (RED) {
         }
 
         // Validate robot and fleet using shared utility (only if specific robot/fleet specified)
-        const robotValidation = validateRobotAndFleet({
-          robotName,
-          robotFleet,
-          rmfContextManager,
-          nodeType: 'START-EVENTS',
-          skipIfEmpty: true // start-events allows empty robot/fleet for auto-assignment
-        });
-        
-        if (!handleValidationResult(robotValidation, setStatus, send, done, msg, [null, msg])) {
-          return;
+        // Skip validation for RMF auto-dispatch mode (robotName = null)
+        if (robotName !== null) {
+          const robotValidation = validateRobotAndFleet({
+            robotName,
+            robotFleet,
+            rmfContextManager,
+            nodeType: 'START-EVENTS',
+            skipIfEmpty: true // start-events allows empty robot/fleet for auto-assignment
+          });
+          
+          if (!handleValidationResult(robotValidation, setStatus, send, done, msg, [null, msg])) {
+            return;
+          }
         }
 
         // Handle parallel behavior if robot name and fleet are specified
