@@ -105,7 +105,7 @@
             robotSelect.empty()
               .append('<option value="">User defined (use msg.rmf_robot_name)</option>')
               .append('<option value="__RMF_DEFINED__">RMF defined</option>')
-              .append('<option value="__AUTO_DEFINED__">Auto defined</option>');
+              .append('<option value="__AUTO_DEFINED__">Auto defined (use available robot)</option>');
             
             // Add robots from selected fleet (or all robots if no fleet selected)
             if (node.rmfData && node.rmfData.robots) {
@@ -222,7 +222,7 @@
     <select id="node-input-robot_name" style="width: 100%;">
       <option value="">User defined (use msg.rmf_robot_name)</option>
       <option value="__RMF_DEFINED__">RMF defined</option>
-      <option value="__AUTO_DEFINED__">Auto defined</option>
+      <option value="__AUTO_DEFINED__">Auto defined (use available robot)</option>
     </select>
   </div>
   
@@ -231,7 +231,7 @@
     <select id="node-input-robot_fleet" style="width: 100%;">
       <option value="">User defined (use msg.rmf_robot_fleet)</option>
       <option value="__RMF_DEFINED__">RMF defined</option>
-      <option value="__AUTO_DEFINED__">Auto defined</option>
+      <option value="__AUTO_DEFINED__">Auto defined (use available fleet)</option>
     </select>
   </div>
   

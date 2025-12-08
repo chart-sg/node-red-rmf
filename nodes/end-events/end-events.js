@@ -9,10 +9,61 @@ module.exports = function (RED) {
 
     node.robot_name = config.robot_name;
     node.robot_fleet = config.robot_fleet;
+    node.start_events_node = config.start_events_node;
 
     // Simple function to set node status
     function setStatus(fill, shape, text) {
       node.status({ fill: fill, shape: shape, text: text });
+    }
+
+    // Get metadata from selected start-events node
+    function getStartEventsMetadata() {
+      if (!node.start_events_node || node.start_events_node === '') {
+        return null;
+      }
+      
+      const startEventsNode = RED.nodes.getNode(node.start_events_node);
+      if (!startEventsNode || startEventsNode.type !== 'start-events') {
+        console.log(`[END-EVENTS] Selected start-events node not found or invalid: ${node.start_events_node}`);
+        return null;
+      }
+      
+      // Check if the start-events node has active task metadata stored
+      // This would be populated when the start-events node successfully creates a task
+      const metadata = {
+        nodeId: startEventsNode.id,
+        robotName: null,
+        robotFleet: null,
+        taskId: null,
+        dynamicEventSeq: null
+      };
+      
+      // Try to get robot info from the start-events node configuration
+      if (startEventsNode.robot_name && startEventsNode.robot_name !== '' && 
+          startEventsNode.robot_name !== '__RMF_DEFINED__' && startEventsNode.robot_name !== '__AUTO_DEFINED__') {
+        metadata.robotName = startEventsNode.robot_name;
+      }
+      
+      if (startEventsNode.robot_fleet && startEventsNode.robot_fleet !== '') {
+        metadata.robotFleet = startEventsNode.robot_fleet;
+      }
+      
+      // Try to get runtime task information from the start-events node's context
+      // This is where active task metadata would be stored after task creation
+      if (startEventsNode.context) {
+        const taskId = startEventsNode.context().get('current_task_id');
+        const dynamicEventSeq = startEventsNode.context().get('current_dynamic_event_seq');
+        const runtimeRobotName = startEventsNode.context().get('current_robot_name');
+        const runtimeRobotFleet = startEventsNode.context().get('current_robot_fleet');
+        
+        if (taskId) metadata.taskId = taskId;
+        if (dynamicEventSeq !== undefined) metadata.dynamicEventSeq = dynamicEventSeq;
+        if (runtimeRobotName) metadata.robotName = runtimeRobotName;
+        if (runtimeRobotFleet) metadata.robotFleet = runtimeRobotFleet;
+      }
+      
+      console.log(`[END-EVENTS] Retrieved metadata from start-events node:`, metadata);
+      return metadata;
     }
 
     // Simple RMF context validation for control nodes
@@ -109,10 +160,33 @@ module.exports = function (RED) {
           return done();
         }
 
-        // Get configuration values (prefer RMF metadata, then payload, then direct message, then node config)
-        const robotName = msg.rmf_robot_name || msg._rmf_robot_name || (msg.payload && msg.payload.robot_name) || msg.robot_name || node.robot_name;
-        const robotFleet = msg.rmf_robot_fleet || msg._rmf_robot_fleet || (msg.payload && msg.payload.robot_fleet) || msg.robot_fleet || node.robot_fleet;
-        const taskId = msg.rmf_task_id || msg._rmf_task_id || (msg.payload && msg.payload.task_id) || msg.task_id;
+        // Get metadata from selected start-events node if configured
+        const startEventsMetadata = getStartEventsMetadata();
+        
+        // Get configuration values (prefer RMF metadata from message, then start-events node, then payload, then direct message, then node config)
+        let robotName = msg.rmf_robot_name || msg._rmf_robot_name || (msg.payload && msg.payload.robot_name) || msg.robot_name;
+        let robotFleet = msg.rmf_robot_fleet || msg._rmf_robot_fleet || (msg.payload && msg.payload.robot_fleet) || msg.robot_fleet;
+        let taskId = msg.rmf_task_id || msg._rmf_task_id || (msg.payload && msg.payload.task_id) || msg.task_id;
+        
+        // Use start-events metadata as fallback if message doesn't contain the required info
+        if (startEventsMetadata) {
+          if (!robotName && startEventsMetadata.robotName) {
+            robotName = startEventsMetadata.robotName;
+            console.log(`[END-EVENTS] Using robot name from start-events node: ${robotName}`);
+          }
+          if (!robotFleet && startEventsMetadata.robotFleet) {
+            robotFleet = startEventsMetadata.robotFleet;
+            console.log(`[END-EVENTS] Using robot fleet from start-events node: ${robotFleet}`);
+          }
+          if (!taskId && startEventsMetadata.taskId) {
+            taskId = startEventsMetadata.taskId;
+            console.log(`[END-EVENTS] Using task ID from start-events node: ${taskId}`);
+          }
+        }
+        
+        // Final fallback to node configuration
+        if (!robotName) robotName = node.robot_name;
+        if (!robotFleet) robotFleet = node.robot_fleet;
 
         // Validate basic inputs using shared utility
         const basicValidation = validateBasicInputs({

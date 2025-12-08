@@ -64,10 +64,87 @@ module.exports = function (RED) {
 
     // Get reference to rmf-config
     node.configNode = RED.nodes.getNode(config.config);
+    
+    // Robot mode tracking variables
+    node.robotModeChangeCallback = null;
+    node.trackingRobotMode = false;
+    node.currentRobotParams = null;
+    node.lastStatusPayload = null;
+    node.nodeCompleted = false;
 
     // Simple function to set node status
     function setStatus(fill, shape, text) {
       node.status({ fill: fill, shape: shape, text: text });
+    }
+
+    // Robot mode tracking helper functions
+    function startRobotModeTracking(robotName, robotFleet, msg) {
+      // Stop any existing tracking first
+      stopRobotModeTracking();
+      
+      if (!robotName || !robotFleet) {
+        console.log('[GOTO-PLACE] Cannot track robot mode: missing robot name or fleet');
+        return;
+      }
+      
+      node.currentRobotParams = { robotName, robotFleet };
+      node.trackingRobotMode = true;
+      node.lastStatusPayload = null;
+      node.nodeCompleted = false;
+      
+      // Register for robot mode change callbacks
+      node.robotModeChangeCallback = (robotName, fleetName, oldMode, newMode) => {
+        // Only process changes for the robot we're tracking
+        if (robotName === node.currentRobotParams.robotName && fleetName === node.currentRobotParams.robotFleet) {
+          console.log(`[GOTO-PLACE] Robot mode changed for ${robotName}/${fleetName}: ${oldMode} -> ${newMode}`);
+          
+          // Don't re-output if the node has completed
+          if (node.nodeCompleted) {
+            console.log('[GOTO-PLACE] Ignoring robot mode change - node has completed');
+            return;
+          }
+          
+          // Re-send the last status with updated robot mode (if we have one)
+          if (node.lastStatusPayload) {
+            // Update the robot mode in the last status payload
+            const updatedStatusPayload = {
+              ...node.lastStatusPayload,
+              rmf_robot_mode: newMode
+            };
+            
+            // Send status update
+            const statusMsg = { ...msg };
+            statusMsg.payload = updatedStatusPayload;
+            statusMsg.rmf_robot_mode = newMode;
+            
+            // Store the updated payload
+            node.lastStatusPayload = updatedStatusPayload;
+            
+            console.log(`[GOTO-PLACE] Re-outputting status with updated robot mode: ${newMode}`);
+            node.send([null, null, statusMsg]);
+          }
+        }
+      };
+      
+      rmfContextManager.onRobotModeChanged(node.robotModeChangeCallback);
+      console.log(`[GOTO-PLACE] Started robot mode tracking for ${robotName}/${robotFleet}`);
+    }
+    
+    function stopRobotModeTracking() {
+      if (node.robotModeChangeCallback && node.trackingRobotMode) {
+        rmfContextManager.offRobotModeChanged(node.robotModeChangeCallback);
+        console.log('[GOTO-PLACE] Stopped robot mode tracking');
+      }
+      
+      node.robotModeChangeCallback = null;
+      node.trackingRobotMode = false;
+      node.currentRobotParams = null;
+      node.lastStatusPayload = null;
+    }
+    
+    function markNodeCompleted() {
+      node.nodeCompleted = true;
+      console.log('[GOTO-PLACE] Node marked as completed');
     }
     
     // Initialize with ready status - no rmf-config dependency
@@ -124,6 +201,9 @@ module.exports = function (RED) {
 
     // Clear listeners and interval on close
     node.on('close', async (removed, done) => {
+      // Stop robot mode tracking
+      stopRobotModeTracking();
+      
       rmfEvents.off('ready', onReady);
       rmfEvents.off('socket_connected', onSocketConnected);
       rmfEvents.off('socket_disconnected', onSocketDisconnected);
@@ -720,6 +800,7 @@ module.exports = function (RED) {
         const goalCallbacks = {
           onGoalComplete: (goalResponse) => {
             isCompleted = true; // Mark as completed to prevent status override
+            markNodeCompleted(); // Mark node as completed to stop robot mode tracking
             console.log(`[GOTO-PLACE COMPLETION] Callback called with:`, goalResponse);
             
             // Set status based on goal response
@@ -797,6 +878,9 @@ module.exports = function (RED) {
             statusMsg.rmf_robot_fleet = robotFleet;
             statusMsg.rmf_dynamic_event_seq = dynamicEventSeq;
             
+            // Store status payload for potential robot mode re-output
+            node.lastStatusPayload = { ...statusMsg.payload };
+            
             send([null, null, statusMsg]);
           }
         };
@@ -818,6 +902,9 @@ module.exports = function (RED) {
         }
 
         console.log('[GOTO-PLACE] Dynamic event goal sent successfully');
+        
+        // Start robot mode tracking after successful goal sending
+        startRobotModeTracking(robotName, robotFleet, msg);
 
         // Only set underway status if goal hasn't completed yet
         if (!isCompleted) {
@@ -841,6 +928,9 @@ module.exports = function (RED) {
             statusMsg.payload.rmf_robot_mode = robotMode;  // In payload
             statusMsg.rmf_robot_mode = robotMode;          // In msg for redundancy
           }
+          
+          // Store status payload for potential robot mode re-output
+          node.lastStatusPayload = { ...statusMsg.payload };
           
           send([null, null, statusMsg]); // Send to status output
         }

@@ -243,6 +243,16 @@ function offRobotDiscovered(callback) {
   return manager.offRobotDiscovered(callback);
 }
 
+function onRobotModeChanged(callback) {
+  const manager = rmfLifecycleManager.initializeRobotManager();
+  return manager.onRobotModeChanged(callback);
+}
+
+function offRobotModeChanged(callback) {
+  const manager = rmfLifecycleManager.initializeRobotManager();
+  return manager.offRobotModeChanged(callback);
+}
+
 function getRobotStateHistory(robotName, fleetName) {
   const manager = rmfLifecycleManager.initializeRobotManager();
   return manager.getRobotStateHistory(robotName, fleetName);
@@ -324,6 +334,8 @@ module.exports = {
   getRobotByDynamicEventSeq,
   onRobotDiscovered,
   offRobotDiscovered,
+  onRobotModeChanged,
+  offRobotModeChanged,
   getRobotStateHistory,
   getRobotManagerStats,
   setRobotUpdateThrottle,

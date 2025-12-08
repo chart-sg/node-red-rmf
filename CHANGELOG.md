@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.4] - 2025-12-08
+
+### Added
+- **end-events node**: Start-Events Node Selection dropdown feature
+  - Allows logical pairing of end-events with specific start-events nodes
+  - Enables task completion without requiring hard-wired flow connections
+  - Automatically retrieves robot and task metadata from selected start-events node
+  - Useful when RMF metadata might be lost between nodes in complex flows
+
+### Fixed
+- Fixed robot mode change detection to prevent re-output from completed nodes
+- Added node completion tracking to avoid status re-emission after task completion
+- Robot mode changes now properly ignored for nodes that have finished execution
+
+### Enhanced
+- **start-events node**: Now stores task metadata in node context for end-events access
+- **end-events node**: Enhanced metadata resolution with priority system (message → start-events → config)
+
 ## [1.0.3] - 2025-11-28
 
 ### Added
@@ -15,8 +33,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Renamed selection modes for clarity (RMF defined vs Auto defined)
 - Fleet selection preserves robot selection modes during changes
 
+### Enhanced
+- Robot mode change detection that re-outputs task status with updated rmf_robot_mode values
+- Real-time robot mode monitoring that re-sends existing task status when modes change
+
 ### Fixed
 - Fleet auto-detection now works correctly with available robot data
+- Consistent descriptive text for all "Auto defined" options in start-events node UI
 
 ## [1.0.2] - 2025-11-27
 

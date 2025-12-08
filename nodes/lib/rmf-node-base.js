@@ -18,6 +18,9 @@ class RMFNodeBase {
     this.rmfConfigReady = false;
     this.eventHandlers = {};
     this.currentMsg = null;
+    this.robotModeChangeCallback = null;
+    this.trackingRobotMode = false;
+    this.currentRobotParams = null; // Track current robot being monitored
   }
 
   /**
@@ -420,6 +423,10 @@ class RMFNodeBase {
    */
   sendError(statusText, errorReason, action = this.nodeType) {
     this.setStatus('red', 'dot', statusText);
+    
+    // Mark node as completed since we're sending final error
+    this.markNodeCompleted();
+    
     // Send on second output: [success, failed, status]
     this.node.send([null, { 
       payload: { 
@@ -497,6 +504,9 @@ class RMFNodeBase {
       successMsg.rmf_dynamic_event_seq = params.dynamicEventSeq;
     }
     
+    // Mark node as completed since we're sending final success
+    this.markNodeCompleted();
+    
     // Send on first output: [success, failed, status]
     this.node.send([successMsg, null, null]);
   }
@@ -517,8 +527,82 @@ class RMFNodeBase {
       statusMsg.rmf_robot_mode = robotMode;          // In msg for redundancy
     }
     
+    // Store the last status payload for robot mode change re-output
+    this.lastStatusPayload = { ...statusPayload };
+    
     // Send on third output: [success, failed, status]
     this.node.send([null, null, statusMsg]);
+  }
+
+  /**
+   * Start tracking robot mode changes for proactive status updates
+   * @param {Object} msg - Message with robot parameters
+   */
+  startRobotModeTracking(msg) {
+    // Stop any existing tracking first
+    this.stopRobotModeTracking();
+    
+    const params = this.extractRMFParameters(msg);
+    if (!params.robotName || !params.robotFleet) {
+      console.log(`[${this.nodeType.toUpperCase()}] Cannot track robot mode: missing robot name or fleet`);
+      return;
+    }
+    
+    this.currentRobotParams = params;
+    this.trackingRobotMode = true;
+    this.lastStatusPayload = null;
+    this.nodeCompleted = false;
+    
+    // Register for robot mode change callbacks
+    this.robotModeChangeCallback = (robotName, fleetName, oldMode, newMode) => {
+      // Only process changes for the robot we're tracking
+      if (robotName === params.robotName && fleetName === params.robotFleet) {
+        console.log(`[${this.nodeType.toUpperCase()}] Robot mode changed for ${robotName}/${fleetName}: ${oldMode} -> ${newMode}`);
+        
+        // Don't re-output if the node has completed
+        if (this.nodeCompleted) {
+          console.log(`[${this.nodeType.toUpperCase()}] Ignoring robot mode change - node has completed`);
+          return;
+        }
+        
+        // Re-send the last status with updated robot mode (if we have one)
+        if (this.lastStatusPayload) {
+          // Update the robot mode in the last status payload
+          const updatedStatusPayload = {
+            ...this.lastStatusPayload,
+            rmf_robot_mode: newMode
+          };
+          
+          this.sendStatus(msg, updatedStatusPayload);
+        }
+      }
+    };
+    
+    rmfContextManager.onRobotModeChanged(this.robotModeChangeCallback);
+    console.log(`[${this.nodeType.toUpperCase()}] Started robot mode tracking for ${params.robotName}/${params.robotFleet}`);
+  }
+
+  /**
+   * Mark this node as completed to prevent further robot mode re-outputs
+   */
+  markNodeCompleted() {
+    this.nodeCompleted = true;
+    console.log(`[${this.nodeType.toUpperCase()}] Node marked as completed`);
+  }
+
+  /**
+   * Stop tracking robot mode changes
+   */
+  stopRobotModeTracking() {
+    if (this.robotModeChangeCallback && this.trackingRobotMode) {
+      rmfContextManager.offRobotModeChanged(this.robotModeChangeCallback);
+      console.log(`[${this.nodeType.toUpperCase()}] Stopped robot mode tracking`);
+    }
+    
+    this.robotModeChangeCallback = null;
+    this.trackingRobotMode = false;
+    this.currentRobotParams = null;
+    this.lastStatusPayload = null;
   }
 
   /**
@@ -557,6 +641,9 @@ class RMFNodeBase {
    * @private
    */
   _cleanup() {
+    // Stop robot mode tracking
+    this.stopRobotModeTracking();
+    
     const rmfEvents = rmfContextManager.rmfEvents;
     
     // Remove event listeners

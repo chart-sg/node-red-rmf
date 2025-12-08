@@ -66,6 +66,9 @@ module.exports = function(RED) {
                     rmf_dynamic_event_seq: params.dynamicEventSeq
                 };
 
+                // Start robot mode tracking for proactive status updates
+                rmfBase.startRobotModeTracking(msg);
+                
                 // Send goal using base class
                 await rmfBase.sendDynamicEventGoal('perform_action', eventData, successData);
 

@@ -98,6 +98,19 @@ module.exports = function (RED) {
 
     // Clear listeners on close
     node.on('close', async (removed, done) => {
+      // Clear task metadata from context
+      try {
+        const context = node.context();
+        context.set('current_task_id', null);
+        context.set('current_dynamic_event_seq', null);
+        context.set('current_robot_name', null);
+        context.set('current_robot_fleet', null);
+        context.set('task_created_timestamp', null);
+        console.log('[START-EVENTS] Cleared task metadata from node context');
+      } catch (error) {
+        console.warn('[START-EVENTS] Failed to clear task metadata from context:', error);
+      }
+      
       rmfEvents.off('ready', onReady);
       rmfEvents.off('socket_connected', onSocketConnected);
       rmfEvents.off('socket_disconnected', onSocketDisconnected);
@@ -455,6 +468,19 @@ module.exports = function (RED) {
         }
 
         setStatus('green', 'dot', 'Task ready');
+
+        // Store task metadata in node context for end-events node access
+        try {
+          const context = node.context();
+          context.set('current_task_id', createResult.taskId);
+          context.set('current_dynamic_event_seq', standbyResult.dynamicEventSeq);
+          if (robotName) context.set('current_robot_name', robotName);
+          if (robotFleet) context.set('current_robot_fleet', robotFleet);
+          context.set('task_created_timestamp', new Date().toISOString());
+          console.log(`[START-EVENTS] Stored task metadata in node context: taskId=${createResult.taskId}, robot=${robotName}/${robotFleet}`);
+        } catch (error) {
+          console.warn(`[START-EVENTS] Failed to store task metadata in context:`, error);
+        }
 
         // Send success output with task information
         msg.payload = {

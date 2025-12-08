@@ -5,7 +5,8 @@
     defaults: {
       name: { value: '' },
       robot_name: { value: '' },
-      robot_fleet: { value: '' }
+      robot_fleet: { value: '' },
+      start_events_node: { value: '' }
     },
     inputs: 1,
     outputs: 1,
@@ -31,6 +32,79 @@
       
       // Setup refresh button
       setupRefreshButton();
+      
+      // Setup start-events node selection
+      setupStartEventsSelection();
+      
+      function setupStartEventsSelection() {
+        populateStartEventsDropdown();
+        
+        // Handle start-events node selection change
+        $('#node-input-start_events_node').on('change', function() {
+          const selectedNodeId = $(this).val();
+          if (selectedNodeId && selectedNodeId !== '') {
+            // Auto-populate robot and fleet from selected start-events node
+            const selectedNode = RED.nodes.node(selectedNodeId);
+            if (selectedNode && selectedNode.type === 'start-events') {
+              // Set robot name if start-events has a specific robot selected
+              if (selectedNode.robot_name && selectedNode.robot_name !== '' && selectedNode.robot_name !== '__RMF_DEFINED__' && selectedNode.robot_name !== '__AUTO_DEFINED__') {
+                $('#node-input-robot_name').val(selectedNode.robot_name);
+                
+                // Also set fleet if available
+                if (selectedNode.robot_fleet && selectedNode.robot_fleet !== '') {
+                  $('#node-input-robot_fleet').val(selectedNode.robot_fleet);
+                }
+              }
+            }
+          }
+        });
+        
+        // Handle refresh start-events list
+        $('#refresh-start-events').on('click', function() {
+          populateStartEventsDropdown();
+        });
+      }
+      
+      function populateStartEventsDropdown() {
+        const startEventsSelect = $('#node-input-start_events_node');
+        startEventsSelect.empty();
+        startEventsSelect.append('<option value="">Use flow connection (default)</option>');
+        
+        // Find all start-events nodes in the workspace
+        const startEventsNodes = [];
+        RED.nodes.eachNode(function(node) {
+          if (node.type === 'start-events') {
+            startEventsNodes.push(node);
+          }
+        });
+        
+        if (startEventsNodes.length > 0) {
+          startEventsNodes.forEach(function(node) {
+            const nodeName = node.name || `${node.type} (${node.id.substring(0, 8)})`;
+            let robotInfo = '';
+            if (node.robot_name && node.robot_name !== '' && node.robot_name !== '__RMF_DEFINED__' && node.robot_name !== '__AUTO_DEFINED__') {
+              robotInfo = ` - ${node.robot_name}`;
+              if (node.robot_fleet && node.robot_fleet !== '') {
+                robotInfo += `/${node.robot_fleet}`;
+              }
+            } else if (node.robot_name === '__RMF_DEFINED__') {
+              robotInfo = ' - RMF defined';
+            } else if (node.robot_name === '__AUTO_DEFINED__') {
+              robotInfo = ' - Auto defined';
+            } else {
+              robotInfo = ' - User defined';
+            }
+            startEventsSelect.append(`<option value="${node.id}">${nodeName}${robotInfo}</option>`);
+          });
+        } else {
+          startEventsSelect.append('<option value="" disabled>No start-events nodes found</option>');
+        }
+        
+        // Restore the current selection if it exists
+        if (node.start_events_node) {
+          startEventsSelect.val(node.start_events_node);
+        }
+      }
       
       function setupRefreshButton() {
         $('#refresh-rmf-data').on('click', function() {
@@ -218,6 +292,19 @@
   </div>
   
   <div class="form-row">
+    <label for="node-input-start_events_node">Start-Events Node</label>
+    <div style="display: flex; align-items: center;">
+      <select id="node-input-start_events_node" style="width: calc(100% - 120px);">
+        <option value="">Use flow connection (default)</option>
+      </select>
+      <button type="button" id="refresh-start-events" class="red-ui-button" style="margin-left: 10px; width: auto;">
+        <i class="fa fa-refresh"></i>
+      </button>
+    </div>
+    <div class="form-tips">Optional: Select a specific start-events node to logically pair with this end-events node. This allows ending events without requiring a direct flow connection, useful when metadata might be lost between nodes.</div>
+  </div>
+  
+  <div class="form-row">
     <label for="node-input-robot_name">Robot Name</label>
     <select id="node-input-robot_name" style="width: 100%;">
       <option value="">Use msg.rmf_robot_name</option>
@@ -251,11 +338,14 @@
   
   <h3>Configuration</h3>
   <dl class="message-properties">
+    <dt>Start-Events Node <span class="property-type">string</span></dt>
+    <dd>Optional: Select a specific start-events node to logically pair with this end-events node. This allows ending events without requiring a direct flow connection and provides robot/task metadata even if lost between nodes.</dd>
+    
     <dt>Robot Name <span class="property-type">string</span></dt>
-    <dd>The name of the robot (optional). Select from dropdown or use "Use msg.robot_name" to pass via message. Usually passed from previous nodes via RMF metadata.</dd>
+    <dd>The name of the robot (optional). Select from dropdown or use "Use msg.robot_name" to pass via message. Usually passed from previous nodes via RMF metadata or automatically populated from selected start-events node.</dd>
     
     <dt>Robot Fleet <span class="property-type">string</span></dt>
-    <dd>The fleet the robot belongs to (optional). Auto-selected when robot is chosen. Usually passed from previous nodes via RMF metadata.</dd>
+    <dd>The fleet the robot belongs to (optional). Auto-selected when robot is chosen. Usually passed from previous nodes via RMF metadata or automatically populated from selected start-events node.</dd>
   </dl>
   
   <h3>Inputs</h3>
@@ -302,7 +392,20 @@
   
   <p><strong>Dynamic Event Flow:</strong> start-events → goto-place → end-events for complete dynamic event flow management.</p>
   
-  <p><strong>Prerequisites:</strong> The robot must have an active RMF task with a dynamic event sequence. This is typically provided by connecting this node at the end of your dynamic event flow.</p>
+  <p><strong>Start-Events Node Selection:</strong> You can optionally select a specific start-events node to logically pair with this end-events node. This feature is useful when:</p>
+  <ul>
+    <li>The flow connection might be broken or indirect</li>
+    <li>RMF metadata might be lost between nodes</li>
+    <li>You want to ensure the correct task is ended regardless of message routing</li>
+  </ul>
   
-  <p><strong>RMF Metadata:</strong> This node prefers to use RMF metadata (msg.rmf_*) passed through the dynamic event flow for robot identification and task management.</p>
+  <p><strong>Prerequisites:</strong> The robot must have an active RMF task with a dynamic event sequence. This is typically provided by connecting this node at the end of your dynamic event flow or by selecting a start-events node.</p>
+  
+  <p><strong>RMF Metadata Priority:</strong> This node uses metadata in this order:</p>
+  <ol>
+    <li>RMF metadata from input message (msg.rmf_*)</li>
+    <li>Metadata from selected start-events node</li>  
+    <li>Message properties (msg.robot_name, etc.)</li>
+    <li>Node configuration</li>
+  </ol>
 </script>

@@ -16,6 +16,8 @@ class RMFRobotManager {
     this.robotStates = new Map(); // robotKey -> state info
     this.fleetManagers = new Map(); // fleetName -> fleet manager
     this.robotDiscoveryCallbacks = new Set();
+    this.robotModeChangeCallbacks = new Set(); // Track mode change callbacks
+    this.previousRobotModes = new Map(); // Track previous robot modes for change detection
     
     // Performance optimization
     this.lastRobotUpdate = 0;
@@ -288,6 +290,45 @@ class RMFRobotManager {
   }
 
   /**
+   * Register a callback for robot mode change events
+   * @param {Function} callback - Callback function (robotName, fleetName, oldMode, newMode)
+   */
+  onRobotModeChanged(callback) {
+    if (typeof callback === 'function') {
+      this.robotModeChangeCallbacks.add(callback);
+      console.log('RMF Robot Manager: Robot mode change callback registered');
+    }
+  }
+
+  /**
+   * Unregister a robot mode change callback
+   * @param {Function} callback - Callback function to remove
+   */
+  offRobotModeChanged(callback) {
+    this.robotModeChangeCallbacks.delete(callback);
+    console.log('RMF Robot Manager: Robot mode change callback unregistered');
+  }
+
+  /**
+   * Trigger robot mode change event
+   * @param {string} robotName - Robot name
+   * @param {string} fleetName - Fleet name
+   * @param {number} oldMode - Previous mode
+   * @param {number} newMode - New mode
+   */
+  triggerRobotModeChanged(robotName, fleetName, oldMode, newMode) {
+    console.log(`RMF Robot Manager: Robot mode changed - ${robotName}/${fleetName}: ${oldMode} -> ${newMode}`);
+    
+    this.robotModeChangeCallbacks.forEach(callback => {
+      try {
+        callback(robotName, fleetName, oldMode, newMode);
+      } catch (error) {
+        console.error('RMF Robot Manager: Error in robot mode change callback:', error);
+      }
+    });
+  }
+
+  /**
    * Trigger robot discovery event
    * @param {Object} robot - Newly discovered robot
    */
@@ -341,11 +382,27 @@ class RMFRobotManager {
       // Update context with processed robot data
       this.rmfCore.updateContextData('robots', processedRobots);
       
-      // Check for newly discovered robots
+      // Check for newly discovered robots and mode changes
       processedRobots.forEach(robot => {
         const robotKey = `${robot.fleet}:${robot.name}`;
+        
+        // Check for newly discovered robots
         if (!this.robotStates.has(robotKey)) {
           this.triggerRobotDiscovered(robot);
+        }
+        
+        // Check for robot mode changes
+        if (robot.mode && typeof robot.mode.mode === 'number') {
+          const previousMode = this.previousRobotModes.get(robotKey);
+          const currentMode = robot.mode.mode;
+          
+          if (previousMode !== undefined && previousMode !== currentMode) {
+            // Mode changed - trigger callback
+            this.triggerRobotModeChanged(robot.name, robot.fleet, previousMode, currentMode);
+          }
+          
+          // Update stored mode
+          this.previousRobotModes.set(robotKey, currentMode);
         }
         
         this.robotStates.set(robotKey, {
