@@ -1,0 +1,228 @@
+#!/usr/bin/env python3
+
+# Copyright 2022 Centre for Healthcare Assistive and Robotics Technologies
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import argparse
+import asyncio
+import json
+import math
+import sys
+import uuid
+
+import rclpy
+from rclpy.node import Node
+from rclpy.parameter import Parameter
+from rclpy.qos import QoSDurabilityPolicy as Durability
+from rclpy.qos import QoSHistoryPolicy as History
+from rclpy.qos import QoSProfile
+from rclpy.qos import QoSReliabilityPolicy as Reliability
+from rmf_task_msgs.msg import ApiRequest
+from rmf_task_msgs.msg import ApiResponse
+
+
+class TaskRequester(Node):
+
+    def __init__(self, argv=sys.argv):
+        super().__init__('task_requester')
+        parser = argparse.ArgumentParser()
+        parser.add_argument('-p', '--places', nargs='+', default='',
+                            type=str, help='Places to patrol through')
+        parser.add_argument('-n', '--rounds',
+                            help='Number of loops to perform',
+                            type=int, default=1)
+        parser.add_argument('-zn', '--zone_name', required=True,
+                            help='Zone name to go to',
+                            type=str)
+        parser.add_argument('-et', '--zone_entry_types', nargs='+', default='',
+                            help='Zone entry type',
+                            type=str)
+        parser.add_argument('-F', '--fleet', type=str,
+                            help='Fleet name, should define tgt with robot')
+        parser.add_argument('-R', '--robot', type=str,
+                            help='Robot name, should define tgt with fleet')
+        parser.add_argument('-st', '--start_time',
+                            help='Start time from now in secs, default: 0',
+                            type=int, default=0)
+        parser.add_argument('-pt', '--priority',
+                            help='Priority value for this request',
+                            type=int, default=0)
+        parser.add_argument('-gf', '--facing',
+                            help='Goal facing orientation for this request',
+                            type=float)
+        parser.add_argument('--use_sim_time', action='store_true',
+                            help='Use sim time, default: false')
+        parser.add_argument(
+            '-o', '--orientation', nargs='+', required=False, type=float,
+            help='Orientation to face in degrees (optional)'
+        )
+
+        parser.add_argument(
+            '--requester',
+            help='Entity that is requesting this task',
+            type=str,
+            default='rmf_demos_tasks'
+        )
+        
+        parser.add_argument(
+            '-a',
+            '--action',
+            required=True,
+            type=str,
+            help='Action names',
+        )
+
+        parser.add_argument('-cN', '--number_of_robots',
+                            help='Number of robots to use',
+                            type=int, default=2)
+
+        parser.add_argument('-cF', '--candidates_fleet', type=str,
+                            help='Fleet involved in the couple/decouple action, should define tgt with candidates_robot')
+        parser.add_argument('-cR', '--candidates_robot', nargs='+', default='',
+                            type=str, help='Robots involved in the couple/decouple action')
+
+        self.args = parser.parse_args(argv[1:])
+        self.response = asyncio.Future()
+
+        transient_qos = QoSProfile(
+            history=History.KEEP_LAST,
+            depth=1,
+            reliability=Reliability.RELIABLE,
+            durability=Durability.TRANSIENT_LOCAL)
+        self.pub = self.create_publisher(
+          ApiRequest, 'task_api_requests', transient_qos
+        )
+
+        # enable ros sim time
+        if self.args.use_sim_time:
+            self.get_logger().info('Using Sim Time')
+            param = Parameter('use_sim_time', Parameter.Type.BOOL, True)
+            self.set_parameters([param])
+
+        # Construct task
+        msg = ApiRequest()
+        msg.request_id = 'couple_decouple_task_' + str(uuid.uuid4())
+        payload = {}
+
+        if self.args.robot and self.args.fleet:
+            self.get_logger().info("Using 'robot_task_request'")
+            payload['type'] = 'robot_task_request'
+            payload['robot'] = self.args.robot
+            payload['fleet'] = self.args.fleet
+        else:
+            self.get_logger().info("Using 'dispatch_task_request'")
+            payload['type'] = 'dispatch_task_request'
+
+        request = {}
+
+        # Set task request start time
+        now = self.get_clock().now().to_msg()
+        now.sec = now.sec + self.args.start_time
+        start_time = now.sec * 1000 + round(now.nanosec/10**6)
+        request['unix_millis_request_time'] = start_time
+        request['unix_millis_earliest_start_time'] = start_time
+        request['requester'] = self.args.requester
+
+        d = {}
+        d['type'] = 'binary'
+        d['value'] = self.args.priority
+        request['priority'] = d
+
+        if self.args.action not in ['couple', 'decouple']:
+            raise ValueError("Action should be 'couple' or 'decouple'")
+        task_type = self.args.action
+
+        # Define task request category
+        request['category'] = task_type
+
+        # Define task request description
+        zone_description = {}
+        zone_description['zone'] = self.args.zone_name
+        if (self.args.zone_entry_types != ''):
+            zone_description['types'] = self.args.zone_entry_types
+        if (self.args.places != ''):
+            ds = []
+            for i in range(len(self.args.places)):
+                d = {}
+                d['waypoint'] = self.args.places[i]
+                if self.args.orientation is not None:
+                    o = self.args.orientation[i]
+                    d['orientation'] = o*math.pi/180.0
+                ds.append(d)
+            zone_description['places'] = ds
+        if (self.args.facing):
+            zone_description['facing'] = self.args.facing*math.pi/180.0
+
+        couple_decouple_description = {}
+
+        input_candidates = {}
+
+        candidates_fleet = ''
+        if self.args.candidates_fleet != '':
+            candidates_fleet = self.args.candidates_fleet
+        candidates_robot = []
+        if self.args.candidates_robot != '':
+            for i in range(len(self.args.candidates_robot)):
+                candidates_robot.append(self.args.candidates_robot[i])
+            input_candidates = {'fleet': candidates_fleet, 'robots': candidates_robot}
+        if input_candidates != {}:
+            couple_decouple_description['candidates'] = input_candidates
+    
+        couple_decouple_description['number_of_robots'] = 2
+        if self.args.number_of_robots >= 2:
+            couple_decouple_description['number_of_robots'] = self.args.number_of_robots
+        
+        couple_decouple_description['expected_zone'] = self.args.zone_name
+        couple_decouple_description['estimated_duration'] = 40  # seconds
+
+        request['description'] = {'zone': zone_description, 'couple': couple_decouple_description}
+        if (task_type == 'decouple'):
+            couple_decouple_description = {}
+            couple_decouple_description['estimated_duration'] = 40  # seconds
+            request['description'] = {'zone': zone_description, 'decouple': couple_decouple_description}
+        payload['request'] = request
+        msg.json_msg = json.dumps(payload)
+
+        def receive_response(response_msg: ApiResponse):
+            if response_msg.request_id == msg.request_id:
+                self.response.set_result(json.loads(response_msg.json_msg))
+
+        transient_qos.depth = 10
+        self.sub = self.create_subscription(
+            ApiResponse, 'task_api_responses', receive_response, transient_qos
+        )
+
+        print(f'Json msg payload: \n{json.dumps(payload, indent=2)}')
+        self.pub.publish(msg)
+
+
+###############################################################################
+
+
+def main(argv=sys.argv):
+    rclpy.init(args=sys.argv)
+    args_without_ros = rclpy.utilities.remove_ros_args(sys.argv)
+
+    task_requester = TaskRequester(args_without_ros)
+    rclpy.spin_until_future_complete(
+        task_requester, task_requester.response, timeout_sec=5.0)
+    if task_requester.response.done():
+        print(f'Got response:\n{task_requester.response.result()}')
+    else:
+        print('Did not get a response')
+    rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main(sys.argv)

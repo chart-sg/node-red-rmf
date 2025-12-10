@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.5] - 2025-12-10
+
+### Added
+- **start-taskV2 node**: Multi-task-type support with comprehensive form validation
+  - Enhanced from single compose tasks to support patrol, zone, couple, and decouple tasks
+  - Implemented progressive field enabling with real-time validation feedback
+  - Added zone-based waypoint filtering and proper RMF schema compliance
+  - Comprehensive form validation with visual feedback and warning messages
+  - Removed standalone couple/decouple nodes in favor of unified task interface
+
+### Enhanced
+- **start-taskV2 node**: Complete architectural redesign for multi-task workflow support
+- Form validation system with disabled field states and progressive enabling
+- Zone vertex filtering for improved waypoint selection accuracy
+
 ## [1.0.4] - 2025-12-08
 
 ### Added

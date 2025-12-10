@@ -1,6 +1,6 @@
 {
   "name": "@chart-sg/node-red-rmf",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "RMF (Robot Middleware Framework) nodes for Node-RED with SharedManager architecture.",
   "license": "ISC",
   "author": {

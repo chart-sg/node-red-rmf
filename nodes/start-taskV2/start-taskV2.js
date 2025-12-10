@@ -9,9 +9,8 @@ module.exports = function (RED) {
 
     node.robot_name = config.robot_name;
     node.robot_fleet = config.robot_fleet;
-    node.task_category = config.task_category;
-    node.task_detail = config.task_detail;
-    node.events = config.events || [];
+    node.task_type = config.task_type || 'compose';
+    node.task_data = config.task_data || { phases: [] };
 
     // Get reference to rmf-config
     node.configNode = RED.nodes.getNode(config.config);
@@ -121,9 +120,8 @@ module.exports = function (RED) {
         // Get configuration values (prefer message properties, then node config)
         let robotName = msg.rmf_robot_name || msg.robot_name || node.robot_name;
         let robotFleet = msg.rmf_robot_fleet || msg.robot_fleet || node.robot_fleet;
-        let taskCategory = msg.task_category || node.task_category || 'User Task';
-        let taskDetail = msg.task_detail || node.task_detail || '';
-        let events = msg.events || node.events || [];
+        let taskType = msg.task_type || node.task_type || 'compose';
+        let taskData = msg.task_data || node.task_data || {};
 
         // Validate robot and fleet using shared utility
         const robotValidation = validateRobotAndFleet({
@@ -138,12 +136,12 @@ module.exports = function (RED) {
           return;
         }
 
-        // Validate events
-        if (!events || events.length === 0) {
-          setStatus('red', 'ring', 'No events specified');
+        // Validate task data based on type
+        if (taskType === 'compose' && (!taskData.phases || taskData.phases.length === 0)) {
+          setStatus('red', 'ring', 'No phases specified for compose task');
           msg.payload = { 
             status: 'failed', 
-            reason: 'At least one event must be specified' 
+            reason: 'At least one phase must be specified for compose task' 
           };
           send([null, msg]);
           return done();
@@ -152,7 +150,7 @@ module.exports = function (RED) {
         setStatus('blue', 'dot', 'Creating Task V2');
 
         // Build task request payload
-        const taskRequest = buildTaskV2Request(robotName, robotFleet, taskCategory, taskDetail, events);
+        const taskRequest = buildTaskV2Request(robotName, robotFleet, taskType, taskData);
         
         const createResult = await createTaskV2(taskRequest);
         if (!createResult.success) {
@@ -206,9 +204,13 @@ module.exports = function (RED) {
     });
 
     // Build Task V2 request payload according to the schema
-    function buildTaskV2Request(robotName, robotFleet, taskCategory, taskDetail, events) {
-      // Build activities from events
-      const activities = events.map(event => {
+    function buildTaskV2Request(robotName, robotFleet, taskType, taskData) {
+      let request;
+      
+      if (taskType === 'compose') {
+        // Build activities from phases
+        const phases = taskData.phases.map(phase => {
+          const activities = phase.events.map(event => {
         if (event.category === 'go_to_place') {
           return {
             category: 'go_to_place',
@@ -243,31 +245,98 @@ module.exports = function (RED) {
               unix_millis_action_duration_estimate: event.duration_estimate || 30000
             }
           };
-        } else {
-          // Generic event
-          return {
-            category: event.category,
-            description: event.description || {}
+        } else if (event.category === 'couple') {
+          const description = {
+            action: 'couple',
+            number_of_robots: event.number_of_robots || 2,
+            expected_zone: event.expected_zone
           };
+          
+          if (event.robots && event.robots.length > 0) {
+            description.candidates = {
+              fleet: robotFleet, // Use task-level fleet instead of event-level
+              robots: event.robots
+            };
+          }
+          
+          if (event.estimated_duration) {
+            description.estimated_duration = event.estimated_duration;
+          }
+          
+          return {
+            category: 'couple_action',
+            description: description
+          };
+        } else if (event.category === 'decouple') {
+          const description = {};
+          
+          if (event.estimated_duration) {
+            description.estimated_duration = event.estimated_duration;
+          }
+          
+          return {
+            category: 'decouple_action',
+            description: description
+          };
+        } else {
+            // Generic event
+            return {
+              category: event.category,
+              description: event.description || {}
+            };
         }
-      });
-
-      // Build the compose task structure
-      const request = {
-        category: 'compose',
-        description: {
-          category: taskCategory,
-          detail: taskDetail,
-          phases: [{
-            activity: {
-              category: 'sequence',
-              description: {
-                activities: activities
-              }
+        });
+        
+        return {
+          activity: {
+            category: 'sequence',
+            description: {
+              activities: activities
             }
-          }]
-        }
-      };
+          }
+        };
+      });
+        
+        request = {
+          category: 'compose',
+          description: {
+            category: taskData.category || 'User Task',
+            detail: taskData.detail || '',
+            phases: phases
+          }
+        };
+      } else if (taskType === 'patrol') {
+        request = {
+          category: 'patrol',
+          description: {
+            places: taskData.places || [],
+            rounds: taskData.rounds || 1
+          }
+        };
+      } else if (taskType === 'zone') {
+        request = {
+          category: 'zone',
+          description: taskData.zone || {}
+        };
+      } else if (taskType === 'couple') {
+        request = {
+          category: 'couple',
+          description: {
+            zone: taskData.zone || {},
+            couple: taskData.couple || {}
+          }
+        };
+      } else if (taskType === 'decouple') {
+        request = {
+          category: 'decouple',
+          description: {
+            zone: taskData.zone || {},
+            decouple: taskData.decouple || {}
+          }
+        };
+      } else {
+        throw new Error(`Unsupported task type: ${taskType}`);
+      }
 
       // Determine request type based on robot specification
       if (robotName && robotFleet) {

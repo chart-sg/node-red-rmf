@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/open-rmf/rmf_ros2/main/rmf_fleet_adapter/schemas/event_description__couple.json",
+  "title": "Couple Event",
+  "description": "To couple a robot",
+  "type": "object",
+  "properties": {
+    "number_of_robots": {
+      "type": "integer",
+      "minimum": 2
+    },
+    "candidates": {
+      "description": "Fleet and list of robot names to couple",
+      "type": "object",
+      "properties": {
+        "fleet": {
+          "description": "The fleet name these robots belong to",
+          "type": "string"
+        },
+        "robots": {
+          "description": "A list of robot names within the fleet",
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["fleet", "robots"]
+    },
+    "expected_zone": {
+      "description": "The zone name where the robots are expected to perform couple",
+      "type": "string"
+    },
+    "estimated_duration": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "required": ["number_of_robots", "expected_zone"]
+}

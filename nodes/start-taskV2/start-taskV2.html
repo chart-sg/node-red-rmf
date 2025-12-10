@@ -8,9 +8,739 @@
 </style>
 
 <script type="text/javascript">
-  // Event management utilities
+  // Task and Event management utilities
+  const TaskV2Utils = {
+    currentNode: null,
+    
+    setCurrentNode: function(node) {
+      this.currentNode = node;
+    },
+    
+    // Task type management
+    setupTaskType: function(container, taskType, taskData = {}) {
+      container.empty();
+      
+      if (taskType === 'compose') {
+        this.setupComposeTask(container, taskData);
+      } else if (taskType === 'patrol') {
+        this.setupPatrolTask(container, taskData);
+      } else if (taskType === 'zone') {
+        this.setupZoneTask(container, taskData);
+      } else if (taskType === 'couple') {
+        this.setupCoupleTask(container, taskData);
+      } else if (taskType === 'decouple') {
+        this.setupDecoupleTask(container, taskData);
+      }
+    },
+    
+    setupComposeTask: function(container, taskData = {}) {
+      container.html(`
+        <div class="form-row">
+          <label>Task Category</label>
+          <input type="text" class="task-category" placeholder="e.g., Custom Task" style="width: 100%;" value="${taskData.category || ''}">
+        </div>
+        <div class="form-row">
+          <label>Task Detail</label>
+          <input type="text" class="task-detail" placeholder="Optional description" style="width: 100%;" value="${taskData.detail || ''}">
+        </div>
+        <div class="form-row">
+          <label>Phases</label>
+          <div style="margin-top: 10px;">
+            <button type="button" class="add-phase red-ui-button">
+              <i class="fa fa-plus"></i> Add Phase
+            </button>
+          </div>
+          <div class="phases-container" style="margin-top: 10px; max-height: 400px; overflow-y: auto;">
+            <!-- Phases will be dynamically added here -->
+          </div>
+        </div>
+      `);
+      
+      // Setup add phase handler
+      container.find('.add-phase').on('click', function() {
+        TaskV2Utils.addPhase(container.find('.phases-container'));
+      });
+      
+      // Initialize with existing phases or add default
+      if (taskData.phases && taskData.phases.length > 0) {
+        taskData.phases.forEach(phaseData => {
+          TaskV2Utils.addPhase(container.find('.phases-container'), phaseData);
+        });
+      } else {
+        TaskV2Utils.addPhase(container.find('.phases-container'));
+      }
+    },
+    
+    setupPatrolTask: function(container, taskData = {}) {
+      container.html(`
+        <div class="form-row">
+          <label>Patrol Places</label>
+          <div style="display: flex; gap: 10px; margin-top: 10px;">
+            <!-- Available waypoints -->
+            <div style="flex: 1;">
+              <h4 style="margin: 0 0 5px 0; font-size: 12px; color: #666;">Available Waypoints</h4>
+              <div class="patrol-available-waypoints" style="border: 1px solid #eee; padding: 5px; min-height: 150px; max-height: 200px; overflow-y: auto; background: #fafafa;">
+                <!-- Available waypoints will be populated here -->
+              </div>
+            </div>
+            
+            <!-- Selected waypoints (ordered) -->
+            <div style="flex: 1;">
+              <h4 style="margin: 0 0 5px 0; font-size: 12px; color: #666;">Selected Places (Patrol Order)</h4>
+              <div class="patrol-selected-waypoints" style="border: 1px solid #eee; padding: 5px; min-height: 150px; max-height: 200px; overflow-y: auto; background: #f0f8ff;">
+                <!-- Selected waypoints will be shown here in order -->
+              </div>
+            </div>
+          </div>
+          <div class="form-tips">Click waypoints to add/remove from patrol route. Drag selected waypoints to reorder patrol sequence.</div>
+        </div>
+        <div class="form-row">
+          <label>Number of Rounds</label>
+          <input type="number" class="patrol-rounds" min="1" value="${taskData.rounds || 1}" style="width: 100%;" disabled>
+          <div class="form-tips patrol-validation" style="color: #d32f2f; margin-top: 5px; display: none;">⚠️ Please select at least one waypoint for the patrol route.</div>
+        </div>
+      `);
+      
+      // Populate waypoints
+      this.populatePatrolWaypoints(container, taskData);
+      
+      // Enable rounds input only when waypoints are selected
+      this.validatePatrolFields(container);
+    },
+    
+    populatePatrolWaypoints: function(container, taskData = {}) {
+      const node = this.currentNode;
+      if (node && node.rmfData && node.rmfData.navGraphs) {
+        const availableContainer = container.find('.patrol-available-waypoints');
+        const selectedContainer = container.find('.patrol-selected-waypoints');
+        const waypoints = new Map();
+        
+        // Extract waypoints from nav graphs
+        node.rmfData.navGraphs.forEach(navGraph => {
+          if (navGraph.vertices) {
+            navGraph.vertices.forEach(vertex => {
+              if (vertex.name && vertex.name.trim() !== '') {
+                waypoints.set(vertex.name, {
+                  name: vertex.name,
+                  fleet: navGraph.fleet || navGraph.name
+                });
+              }
+            });
+          }
+        });
+        
+        // Populate available waypoints
+        Array.from(waypoints.values()).sort((a, b) => a.name.localeCompare(b.name)).forEach(waypoint => {
+          const waypointItem = $(`
+            <div class="patrol-waypoint-item" data-waypoint="${waypoint.name}" style="padding: 3px 6px; margin: 2px; background: #fff; border: 1px solid #ddd; cursor: pointer; border-radius: 3px;">
+              ${waypoint.name}
+            </div>
+          `);
+          
+          waypointItem.on('click', function() {
+            const waypointName = $(this).data('waypoint');
+            TaskV2Utils.addPatrolWaypoint(selectedContainer, waypointName);
+            $(this).hide();
+          });
+          
+          availableContainer.append(waypointItem);
+        });
+        
+        // Initialize with existing places
+        if (taskData.places && taskData.places.length > 0) {
+          taskData.places.forEach(place => {
+            TaskV2Utils.addPatrolWaypoint(selectedContainer, place);
+            availableContainer.find(`[data-waypoint="${place}"]`).hide();
+          });
+        }
+      }
+    },
+    
+    addPatrolWaypoint: function(selectedContainer, waypointName) {
+      const waypointItem = $(`
+        <div class="patrol-selected-item" data-waypoint="${waypointName}" style="padding: 3px 6px; margin: 2px; background: #e3f2fd; border: 1px solid #2196F3; cursor: move; border-radius: 3px; position: relative;">
+          <span>${waypointName}</span>
+          <button type="button" class="remove-patrol-waypoint" style="float: right; background: none; border: none; color: #d32f2f; font-size: 12px; cursor: pointer;">&times;</button>
+        </div>
+      `);
+      
+      waypointItem.find('.remove-patrol-waypoint').on('click', function(e) {
+        e.stopPropagation();
+        const waypoint = waypointItem.data('waypoint');
+        waypointItem.remove();
+        // Show the waypoint back in available list
+        selectedContainer.closest('.form-row').find(`.patrol-waypoint-item[data-waypoint="${waypoint}"]`).show();
+        // Update validation after removing waypoint
+        const container = selectedContainer.closest('.form-row').parent();
+        TaskV2Utils.validatePatrolFields(container);
+      });
+      
+      selectedContainer.append(waypointItem);
+      
+      // Update validation after adding waypoint
+      const container = selectedContainer.closest('.form-row').parent();
+      TaskV2Utils.validatePatrolFields(container);
+    },
+    
+    validatePatrolFields: function(container) {
+      const selectedWaypoints = container.find('.patrol-selected-item');
+      const roundsInput = container.find('.patrol-rounds');
+      const validationMsg = container.find('.patrol-validation');
+      
+      if (selectedWaypoints.length > 0) {
+        roundsInput.prop('disabled', false);
+        validationMsg.hide();
+      } else {
+        roundsInput.prop('disabled', true);
+        validationMsg.show();
+      }
+    },
+    
+    setupZoneTask: function(container, taskData = {}) {
+      container.html(`
+        <div class="form-row">
+          <label>Zone:</label>
+          <select class="zone-select" style="width: 100%;">
+            <option value="">Select zone...</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Zone Types (optional):</label>
+          <select class="zone-types" multiple style="width: 100%; height: 80px;" disabled>
+            <option value="all" selected>All</option>
+            <option value="human_facing">Human Facing</option>
+            <option value="left">Left</option>
+            <option value="right">Right</option>
+            <option value="center">Center</option>
+            <option value="top">Top</option>
+            <option value="bottom">Bottom</option>
+          </select>
+          <div class="form-tips">Hold Ctrl/Cmd to select multiple zone entry types. 'All' is mutually exclusive with other selections.</div>
+        </div>
+        <div class="form-row">
+          <label>Preferred Places (optional):</label>
+          <div class="zone-places-container" style="border: 1px solid #ddd; padding: 10px; max-height: 300px; overflow-y: auto; opacity: 0.5; pointer-events: none;">
+            <div class="form-tips" style="margin-bottom: 10px;">Select waypoints from available list. Drag selected waypoints to reorder priority (top = highest priority).</div>
+            
+            <div style="display: flex; gap: 10px;">
+              <!-- Available waypoints -->
+              <div style="flex: 1;">
+                <h4 style="margin: 0 0 5px 0; font-size: 12px; color: #666;">Available Waypoints</h4>
+                <div class="zone-available-waypoints" style="border: 1px solid #eee; padding: 5px; min-height: 100px; max-height: 150px; overflow-y: auto; background: #fafafa;">
+                  <!-- Available waypoints will be populated here -->
+                </div>
+              </div>
+              
+              <!-- Selected waypoints (ordered) -->
+              <div style="flex: 1;">
+                <h4 style="margin: 0 0 5px 0; font-size: 12px; color: #666;">Selected Waypoints (Priority Order)</h4>
+                <div class="zone-selected-waypoints" style="border: 1px solid #eee; padding: 5px; min-height: 100px; max-height: 150px; overflow-y: auto; background: #f0f8ff;">
+                  <!-- Selected waypoints will be shown here in order -->
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="form-row">
+          <label>Final Facing (radians, optional):</label>
+          <input type="number" class="zone-facing" step="0.01" placeholder="e.g., 1.57 (90 degrees) - applies if no waypoint orientations set" style="width: 100%;" disabled>
+        </div>
+        <div class="zone-validation" style="color: #d32f2f; margin-top: 10px; display: none;">⚠️ Please select a zone first to enable configuration options.</div>
+      `);
+      
+      // Populate zones
+      this.populateZoneData(container, taskData);
+      
+      // Setup zone validation
+      this.validateZoneFields(container);
+    },
+    
+    populateZoneData: function(container, taskData = {}) {
+      const node = this.currentNode;
+      
+      // Populate zone dropdown
+      if (node && node.rmfData && node.rmfData.zones) {
+        const zoneSelect = container.find('.zone-select');
+        node.rmfData.zones.forEach(zone => {
+          if (zone.name && zone.name.trim() !== '') {
+            zoneSelect.append(`<option value="${zone.name}">${zone.name}</option>`);
+          }
+        });
+        if (taskData.zone && taskData.zone.zone) {
+          zoneSelect.val(taskData.zone.zone);
+        }
+      }
+      
+      // Setup zone waypoint filtering (only show waypoints within selected zone)
+      if (node && node.rmfData && node.rmfData.zones) {
+        const zoneSelect = container.find('.zone-select');
+        const availableContainer = container.find('.zone-available-waypoints');
+        const selectedContainer = container.find('.zone-selected-waypoints');
+        
+        // Update waypoints when zone changes
+        zoneSelect.on('change', function() {
+          const selectedZone = $(this).val();
+          availableContainer.empty();
+          selectedContainer.empty();
+          
+          // Update field validation
+          TaskV2Utils.validateZoneFields(container);
+          
+          if (selectedZone) {
+            const zone = node.rmfData.zones.find(z => z.name === selectedZone);
+            if (zone) {
+              console.log('Zone data for', selectedZone, ':', zone);
+              
+              const zoneVertices = getZoneVertices(zone);
+              console.log('Zone vertices:', zoneVertices);
+              
+              if (zoneVertices.length > 0) {
+                zoneVertices.forEach((vertex, index) => {
+                  let vertexName, displayName, vertexValue;
+                  
+                  // Handle different zone vertex structures
+                  if (typeof vertex === 'object' && vertex.name) {
+                    // Vertex object with name
+                    vertexName = vertex.name;
+                    vertexValue = vertex.name;
+                    displayName = vertexName;
+                  } else if (typeof vertex === 'number') {
+                    // Vertex index - find corresponding vertex name from navGraphs
+                    const graph = node.rmfData.navGraphs ? node.rmfData.navGraphs.find(g => 
+                      g.name === zone.graph || g.vertices.length > vertex
+                    ) : null;
+                    
+                    if (graph && graph.vertices[vertex]) {
+                      vertexName = graph.vertices[vertex].name || `Vertex ${vertex}`;
+                      vertexValue = vertexName;
+                      displayName = `${vertexName} (Position ${index + 1})`;
+                    } else {
+                      vertexName = `Vertex ${vertex}`;
+                      vertexValue = `vertex_${vertex}`;
+                      displayName = `Position ${index + 1} (Index ${vertex})`;
+                    }
+                  } else {
+                    // Fallback for other structures
+                    vertexName = `Position ${index + 1}`;
+                    vertexValue = `vertex_${index}`;
+                    displayName = vertexName;
+                  }
+                  
+                  // Create available waypoint item
+                  const waypointItem = $(`
+                    <div class="zone-waypoint-item" data-waypoint="${vertexValue}" style="padding: 5px; margin: 2px 0; background: white; border: 1px solid #ddd; cursor: pointer; border-radius: 3px; font-size: 11px;">
+                      <span style="color: #333;">${displayName}</span>
+                    </div>
+                  `);
+                  
+                  waypointItem.on('click', function() {
+                    const waypointValue = $(this).data('waypoint');
+                    TaskV2Utils.addZoneWaypoint(selectedContainer, waypointValue, displayName);
+                    $(this).hide();
+                  });
+                  
+                  availableContainer.append(waypointItem);
+                });
+                
+                // Make selected waypoints sortable (fallback if jQuery UI not available)
+                try {
+                  selectedContainer.sortable({
+                    items: '.zone-selected-item',
+                    placeholder: 'waypoint-placeholder',
+                    tolerance: 'pointer',
+                    cursor: 'move'
+                  });
+                } catch (e) {
+                  console.log('jQuery UI sortable not available, using basic ordering');
+                }
+              }
+            }
+          }
+        });
+        
+        // Initialize with existing zone and preferred places
+        if (taskData.zone && taskData.zone.zone) {
+          zoneSelect.val(taskData.zone.zone);
+          zoneSelect.trigger('change'); // Populate waypoints for the selected zone
+          
+          // After waypoints are populated, restore selected places
+          if (taskData.zone.preferred_places && taskData.zone.preferred_places.length > 0) {
+            setTimeout(() => {
+              taskData.zone.preferred_places.forEach(place => {
+                const waypointItem = availableContainer.find(`[data-waypoint="${place}"]`);
+                if (waypointItem.length > 0) {
+                  const displayName = waypointItem.text();
+                  TaskV2Utils.addZoneWaypoint(selectedContainer, place, displayName);
+                  waypointItem.hide();
+                }
+              });
+            }, 100);
+          }
+        }
+      }
+      
+      // Set existing zone types
+      if (taskData.zone && taskData.zone.zone_types) {
+        const zoneTypesSelect = container.find('.zone-types');
+        zoneTypesSelect.val(taskData.zone.zone_types);
+      }
+      
+      // Set existing facing
+      if (taskData.zone && taskData.zone.facing !== undefined) {
+        container.find('.zone-facing').val(taskData.zone.facing);
+      }
+    },
+    
+    addZoneWaypoint: function(selectedContainer, waypointValue, displayName) {
+      displayName = displayName || waypointValue;
+      
+      // Check if already selected
+      if (selectedContainer.find(`[data-waypoint="${waypointValue}"]`).length > 0) {
+        return;
+      }
+      
+      const waypointItem = $(`
+        <div class="zone-selected-item" data-waypoint="${waypointValue}" style="padding: 5px; margin: 2px 0; background: #e3f2fd; border: 1px solid #2196F3; cursor: move; border-radius: 3px; position: relative; font-size: 11px;">
+          <span style="color: #333;">${displayName}</span>
+          <button type="button" class="remove-zone-waypoint" style="float: right; background: none; border: none; color: #d32f2f; font-size: 12px; cursor: pointer;">&times;</button>
+        </div>
+      `);
+      
+      waypointItem.find('.remove-zone-waypoint').on('click', function(e) {
+        e.stopPropagation();
+        const waypoint = waypointItem.data('waypoint');
+        waypointItem.remove();
+        // Show the waypoint back in available list
+        selectedContainer.closest('.zone-places-container').find(`.zone-waypoint-item[data-waypoint="${waypoint}"]`).show();
+      });
+      
+      selectedContainer.append(waypointItem);
+    },
+    
+    validateZoneFields: function(container) {
+      const zoneSelect = container.find('.zone-select');
+      const zoneTypes = container.find('.zone-types');
+      const placesContainer = container.find('.zone-places-container');
+      const facingInput = container.find('.zone-facing');
+      const validationMsg = container.find('.zone-validation');
+      
+      const hasZone = zoneSelect.val() && zoneSelect.val() !== '';
+      
+      if (hasZone) {
+        zoneTypes.prop('disabled', false);
+        placesContainer.css({ 'opacity': '1', 'pointer-events': 'auto' });
+        facingInput.prop('disabled', false);
+        validationMsg.hide();
+      } else {
+        zoneTypes.prop('disabled', true);
+        placesContainer.css({ 'opacity': '0.5', 'pointer-events': 'none' });
+        facingInput.prop('disabled', true);
+        validationMsg.show();
+      }
+    },
+    
+    setupCoupleTask: function(container, taskData = {}) {
+      container.html(`
+        <div class="form-row">
+          <label>Coupling Zone</label>
+          <select class="couple-zone-select" style="width: 100%;">
+            <option value="">Select zone where robots will couple...</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Couple Configuration</label>
+          <div class="couple-config" style="border: 1px solid #ddd; padding: 10px; opacity: 0.5; pointer-events: none;">
+            <div class="form-row">
+              <label>Number of Robots:</label>
+              <input type="number" class="couple-robots" min="2" value="${taskData.couple && taskData.couple.number_of_robots || 2}" style="width: 100%;" disabled>
+              <div class="form-tips">Specify how many robots should participate in the coupling operation.</div>
+            </div>
+            <div class="form-row">
+              <label>Estimated Duration (seconds):</label>
+              <input type="number" class="couple-duration" min="0" value="${taskData.couple && taskData.couple.estimated_duration || 60}" style="width: 100%;" disabled>
+              <div class="form-tips">Expected time to complete the coupling operation.</div>
+            </div>
+          </div>
+        </div>
+        <div class="couple-validation" style="color: #d32f2f; margin-top: 10px; display: none;">⚠️ Please select a coupling zone first to enable configuration options.</div>
+      `);
+      
+      // Populate zones and setup validation
+      this.populateCoupleData(container, taskData);
+    },
+    
+    populateCoupleData: function(container, taskData = {}) {
+      const node = this.currentNode;
+      if (node && node.rmfData && node.rmfData.zones) {
+        const zoneSelect = container.find('.couple-zone-select');
+        node.rmfData.zones.forEach(zone => {
+          if (zone.name && zone.name.trim() !== '') {
+            zoneSelect.append(`<option value="${zone.name}">${zone.name}</option>`);
+          }
+        });
+        
+        // Setup zone change handler for validation
+        zoneSelect.on('change', function() {
+          TaskV2Utils.validateCoupleFields(container);
+        });
+        
+        if (taskData.zone && taskData.zone.zone) {
+          zoneSelect.val(taskData.zone.zone);
+        }
+        
+        // Initial validation
+        this.validateCoupleFields(container);
+      }
+    },
+    
+    validateCoupleFields: function(container) {
+      const zoneSelect = container.find('.couple-zone-select');
+      const coupleConfig = container.find('.couple-config');
+      const robotsInput = container.find('.couple-robots');
+      const durationInput = container.find('.couple-duration');
+      const validationMsg = container.find('.couple-validation');
+      
+      const hasZone = zoneSelect.val() && zoneSelect.val() !== '';
+      
+      if (hasZone) {
+        coupleConfig.css({ 'opacity': '1', 'pointer-events': 'auto' });
+        robotsInput.prop('disabled', false);
+        durationInput.prop('disabled', false);
+        validationMsg.hide();
+      } else {
+        coupleConfig.css({ 'opacity': '0.5', 'pointer-events': 'none' });
+        robotsInput.prop('disabled', true);
+        durationInput.prop('disabled', true);
+        validationMsg.show();
+      }
+    },
+    
+    setupDecoupleTask: function(container, taskData = {}) {
+      container.html(`
+        <div class="form-row">
+          <label>Decoupling Zone</label>
+          <select class="decouple-zone-select" style="width: 100%;">
+            <option value="">Select zone where robots will decouple...</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Decouple Configuration</label>
+          <div class="decouple-config" style="border: 1px solid #ddd; padding: 10px; opacity: 0.5; pointer-events: none;">
+            <div class="form-row">
+              <label>Estimated Duration (seconds):</label>
+              <input type="number" class="decouple-duration" min="0" value="${taskData.decouple && taskData.decouple.estimated_duration || 60}" style="width: 100%;" disabled>
+              <div class="form-tips">Expected time to complete the decoupling operation.</div>
+            </div>
+          </div>
+        </div>
+        <div class="decouple-validation" style="color: #d32f2f; margin-top: 10px; display: none;">⚠️ Please select a decoupling zone first to enable configuration options.</div>
+      `);
+      
+      // Populate zones and setup validation
+      this.populateDecoupleData(container, taskData);
+    },
+    
+    populateDecoupleData: function(container, taskData = {}) {
+      const node = this.currentNode;
+      if (node && node.rmfData && node.rmfData.zones) {
+        const zoneSelect = container.find('.decouple-zone-select');
+        node.rmfData.zones.forEach(zone => {
+          if (zone.name && zone.name.trim() !== '') {
+            zoneSelect.append(`<option value="${zone.name}">${zone.name}</option>`);
+          }
+        });
+        
+        // Setup zone change handler for validation
+        zoneSelect.on('change', function() {
+          TaskV2Utils.validateDecoupleFields(container);
+        });
+        
+        if (taskData.zone && taskData.zone.zone) {
+          zoneSelect.val(taskData.zone.zone);
+        }
+        
+        // Initial validation
+        this.validateDecoupleFields(container);
+      }
+    },
+    
+    validateDecoupleFields: function(container) {
+      const zoneSelect = container.find('.decouple-zone-select');
+      const decoupleConfig = container.find('.decouple-config');
+      const durationInput = container.find('.decouple-duration');
+      const validationMsg = container.find('.decouple-validation');
+      
+      const hasZone = zoneSelect.val() && zoneSelect.val() !== '';
+      
+      if (hasZone) {
+        decoupleConfig.css({ 'opacity': '1', 'pointer-events': 'auto' });
+        durationInput.prop('disabled', false);
+        validationMsg.hide();
+      } else {
+        decoupleConfig.css({ 'opacity': '0.5', 'pointer-events': 'none' });
+        durationInput.prop('disabled', true);
+        validationMsg.show();
+      }
+    },
+    
+    // Phase management for compose tasks
+    addPhase: function(phasesContainer, phaseData = {}) {
+      const phaseId = Date.now() + Math.random();
+      const phaseDiv = $(`
+        <div class="phase-item" data-phase-id="${phaseId}" style="border: 2px solid #2196F3; padding: 15px; margin: 10px 0; background: #f8f9fa;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <label style="font-weight: bold; color: #2196F3;">Phase ${phasesContainer.children().length + 1}</label>
+            <button type="button" class="remove-phase red-ui-button" style="background: #d32f2f;">
+              <i class="fa fa-trash"></i> Remove Phase
+            </button>
+          </div>
+          <div class="form-row">
+            <label>Events in this Phase</label>
+            <div style="margin-top: 10px;">
+              <button type="button" class="add-event red-ui-button">
+                <i class="fa fa-plus"></i> Add Event
+              </button>
+            </div>
+            <div class="events-container" style="margin-top: 10px; border: 1px solid #ddd; padding: 10px; min-height: 60px;">
+              <!-- Events will be dynamically added here -->
+            </div>
+          </div>
+        </div>
+      `);
+      
+      phasesContainer.append(phaseDiv);
+      
+      // Setup handlers
+      phaseDiv.find('.remove-phase').on('click', function() {
+        phaseDiv.remove();
+        TaskV2Utils.updatePhaseLabels(phasesContainer);
+      });
+      
+      phaseDiv.find('.add-event').on('click', function() {
+        TaskV2EventUtils.addEvent(phaseDiv.find('.events-container'));
+      });
+      
+      // Initialize with existing events or add default
+      if (phaseData.events && phaseData.events.length > 0) {
+        phaseData.events.forEach(eventData => {
+          TaskV2EventUtils.addEvent(phaseDiv.find('.events-container'), eventData);
+        });
+      } else {
+        TaskV2EventUtils.addEvent(phaseDiv.find('.events-container'));
+      }
+      
+      return phaseDiv;
+    },
+    
+    updatePhaseLabels: function(phasesContainer) {
+      phasesContainer.find('.phase-item').each(function(index) {
+        $(this).find('label').first().text(`Phase ${index + 1}`);
+      });
+    },
+    
+    // Get task data based on type
+    getTaskData: function(container) {
+      const taskType = $('#node-input-task_type').val();
+      
+      if (taskType === 'compose') {
+        const taskData = {
+          category: container.find('.task-category').val() || '',
+          detail: container.find('.task-detail').val() || '',
+          phases: []
+        };
+        
+        container.find('.phase-item').each(function() {
+          const phaseDiv = $(this);
+          const phase = {
+            events: []
+          };
+          
+          phaseDiv.find('.event-item').each(function() {
+            const eventDiv = $(this);
+            const event = TaskV2EventUtils.getEventData(eventDiv);
+            if (event) {
+              phase.events.push(event);
+            }
+          });
+          
+          if (phase.events.length > 0) {
+            taskData.phases.push(phase);
+          }
+        });
+        
+        return taskData;
+      } else if (taskType === 'patrol') {
+        const places = [];
+        container.find('.patrol-selected-item').each(function() {
+          places.push($(this).data('waypoint'));
+        });
+        
+        return {
+          places: places,
+          rounds: parseInt(container.find('.patrol-rounds').val()) || 1
+        };
+      } else if (taskType === 'zone') {
+        const zoneData = {
+          zone: container.find('.zone-select').val()
+        };
+        
+        // Get zone types
+        const zoneTypes = [];
+        container.find('.zone-types option:selected').each(function() {
+          zoneTypes.push($(this).val());
+        });
+        if (zoneTypes.length > 0 && !zoneTypes.includes('all')) {
+          zoneData.zone_types = zoneTypes;
+        }
+        
+        // Get preferred places
+        const places = [];
+        container.find('.zone-selected-item').each(function() {
+          places.push($(this).data('waypoint'));
+        });
+        if (places.length > 0) {
+          zoneData.preferred_places = places;
+        }
+        
+        // Get facing direction
+        const facing = container.find('.zone-facing').val();
+        if (facing !== '') {
+          zoneData.facing = parseFloat(facing);
+        }
+        
+        return {
+          zone: zoneData
+        };
+      } else if (taskType === 'couple') {
+        const selectedZone = container.find('.couple-zone-select').val();
+        return {
+          zone: {
+            zone: selectedZone
+          },
+          couple: {
+            number_of_robots: parseInt(container.find('.couple-robots').val()) || 2,
+            expected_zone: selectedZone, // Use the same zone as expected_zone
+            estimated_duration: parseInt(container.find('.couple-duration').val()) || 60
+          }
+        };
+      } else if (taskType === 'decouple') {
+        return {
+          zone: {
+            zone: container.find('.decouple-zone-select').val()
+          },
+          decouple: {
+            estimated_duration: parseInt(container.find('.decouple-duration').val()) || 60
+          }
+        };
+      }
+      
+      return {};
+    }
+  };
+
+  // Event management utilities (reused from original)
   const TaskV2EventUtils = {
-    currentNode: null, // Store reference to current node
+    currentNode: null,
     
     setCurrentNode: function(node) {
       this.currentNode = node;
@@ -33,6 +763,8 @@
               <option value="go_to_place">Go To Place</option>
               <option value="go_to_zone">Go To Zone</option>
               <option value="perform_action">Perform Action</option>
+              <option value="couple">Couple Action</option>
+              <option value="decouple">Decouple Action</option>
             </select>
           </div>
           
@@ -497,6 +1229,53 @@
             <input type="number" class="event-duration-estimate" value="${eventData.duration_estimate || 30000}" style="width: 100%;">
           </div>
         `);
+      } else if (category === 'couple') {
+        detailsDiv.html(`
+          <div class="form-row">
+            <label>Number of Robots:</label>
+            <input type="number" class="event-couple-robots" min="2" value="${eventData.number_of_robots || 2}" style="width: 100%;">
+          </div>
+          <div class="form-row">
+            <label>Robot Names (comma-separated):</label>
+            <input type="text" class="event-couple-robots-list" value="${eventData.robots ? eventData.robots.join(', ') : ''}" style="width: 100%;">
+            <div class="form-tips">Optional: Specific robot names. Leave empty for auto-selection from task fleet.</div>
+          </div>
+          <div class="form-row">
+            <label>Expected Zone:</label>
+            <select class="event-couple-zone" style="width: 100%;">
+              <option value="">Select zone...</option>
+            </select>
+            <div class="form-tips">Zone where robots are expected to perform coupling</div>
+          </div>
+          <div class="form-row">
+            <label>Estimated Duration (seconds):</label>
+            <input type="number" class="event-couple-duration" min="0" value="${eventData.estimated_duration || 300}" style="width: 100%;">
+          </div>
+        `);
+        
+        // Populate zones from RMF data
+        const node = TaskV2EventUtils.currentNode;
+        if (node && node.rmfData && node.rmfData.zones) {
+          const zoneSelect = detailsDiv.find('.event-couple-zone');
+          node.rmfData.zones.forEach(zone => {
+            if (zone.name && zone.name.trim() !== '') {
+              zoneSelect.append(`<option value="${zone.name}">${zone.name}</option>`);
+            }
+          });
+          
+          // Set saved value if provided
+          if (eventData.expected_zone) {
+            zoneSelect.val(eventData.expected_zone);
+          }
+        }
+      } else if (category === 'decouple') {
+        detailsDiv.html(`
+          <div class="form-row">
+            <label>Estimated Duration (seconds):</label>
+            <input type="number" class="event-decouple-duration" min="0" value="${eventData.estimated_duration || 60}" style="width: 100%;">
+            <div class="form-tips">Estimated time to decouple previously coupled robots</div>
+          </div>
+        `);
       }
     },
     
@@ -562,6 +1341,16 @@
           eventData.action_category = eventDiv.find('.event-action-category').val();
           eventData.action_description = eventDiv.find('.event-action-description').val();
           eventData.duration_estimate = parseInt(eventDiv.find('.event-duration-estimate').val()) || 30000;
+        } else if (category === 'couple') {
+          eventData.number_of_robots = parseInt(eventDiv.find('.event-couple-robots').val()) || 2;
+          const robotsList = eventDiv.find('.event-couple-robots-list').val();
+          if (robotsList && robotsList.trim()) {
+            eventData.robots = robotsList.split(',').map(r => r.trim()).filter(r => r.length > 0);
+          }
+          eventData.expected_zone = eventDiv.find('.event-couple-zone').val();
+          eventData.estimated_duration = parseInt(eventDiv.find('.event-couple-duration').val()) || 300;
+        } else if (category === 'decouple') {
+          eventData.estimated_duration = parseInt(eventDiv.find('.event-decouple-duration').val()) || 60;
         }
         
         events.push(eventData);
@@ -750,6 +1539,16 @@
           currentData.action_category = eventDiv.find('.event-action-category').val();
           currentData.action_description = eventDiv.find('.event-action-description').val();
           currentData.duration_estimate = parseInt(eventDiv.find('.event-duration-estimate').val()) || 30000;
+        } else if (category === 'couple') {
+          currentData.number_of_robots = parseInt(eventDiv.find('.event-couple-robots').val()) || 2;
+          const robotsList = eventDiv.find('.event-couple-robots-list').val();
+          if (robotsList && robotsList.trim()) {
+            currentData.robots = robotsList.split(',').map(r => r.trim()).filter(r => r.length > 0);
+          }
+          currentData.expected_zone = eventDiv.find('.event-couple-zone').val();
+          currentData.estimated_duration = parseInt(eventDiv.find('.event-couple-duration').val()) || 300;
+        } else if (category === 'decouple') {
+          currentData.estimated_duration = parseInt(eventDiv.find('.event-decouple-duration').val()) || 60;
         }
         
         currentEvents.push(currentData);
@@ -762,6 +1561,52 @@
       setTimeout(() => {
         TaskV2EventUtils.restoreEventValues(container, currentEvents);
       }, 100);
+    },
+    
+    getEventData: function(eventDiv) {
+      const category = eventDiv.find('.event-category').val();
+      const eventData = { category };
+      
+      if (category === 'go_to_place') {
+        eventData.description = eventDiv.find('.event-location').val();
+        const orientation = eventDiv.find('.event-orientation').val();
+        if (orientation !== '') {
+          eventData.orientation = parseFloat(orientation);
+        }
+      } else if (category === 'go_to_zone') {
+        eventData.zone = eventDiv.find('.event-zone').val();
+        
+        // Get zone types
+        const zoneTypes = [];
+        eventDiv.find('.event-zone-types option:selected').each(function() {
+          zoneTypes.push($(this).val());
+        });
+        if (zoneTypes.length > 0 && !zoneTypes.includes('all')) {
+          eventData.zone_types = zoneTypes;
+        }
+        
+        // Get preferred places
+        const places = [];
+        eventDiv.find('.selected-waypoints .waypoint-item').each(function() {
+          places.push($(this).data('waypoint'));
+        });
+        if (places.length > 0) {
+          eventData.preferred_places = places;
+        }
+        
+        const facing = eventDiv.find('.event-zone-facing').val();
+        if (facing !== '') {
+          eventData.facing = parseFloat(facing);
+        }
+      } else if (category === 'perform_action') {
+        eventData.action_category = eventDiv.find('.event-action-category').val();
+        eventData.action_description = eventDiv.find('.event-action-description').val();
+      } else if (category === 'couple' || category === 'decouple') {
+        eventData.action_category = category;
+        eventData.action_description = eventDiv.find('.event-action-description').val() || `${category} action`;
+      }
+      
+      return eventData;
     }
   };
 
@@ -885,9 +1730,8 @@
       config: { type: 'rmf-config', required: true },
       robot_name: { value: '' },
       robot_fleet: { value: '' },
-      task_category: { value: '' },
-      task_detail: { value: '' },
-      events: { value: [] }
+      task_type: { value: 'compose' },
+      task_data: { value: { phases: [] } }
     },
     inputs: 1,
     outputs: 3,
@@ -899,11 +1743,13 @@
     paletteLabel: 'Create Task',
     oneditprepare: function() {
       const node = this;
+      node.isLoaded = true;
       
-      // Set the current node reference for event utilities
+      // Set the current node reference
+      TaskV2Utils.setCurrentNode(node);
       TaskV2EventUtils.setCurrentNode(node);
       
-      console.log('Node oneditprepare - saved events:', node.events);
+      console.log('Node oneditprepare - saved task_data:', node.task_data);
       
       // Initialize data storage (same structure as goto-place)
       node.rmfData = {
@@ -922,8 +1768,8 @@
       // Setup refresh button
       setupRefreshButton();
       
-      // Setup events management
-      setupEventsManagement();
+      // Setup task management
+      setupTaskManagement();
       
       function loadRMFData() {
         $.getJSON('/rmf/data', function(data) {
@@ -941,24 +1787,19 @@
             TaskV2RMFUtils.showDataStatus(`Loaded ${data.robots.length} robots, ${locationCount} locations, ${zoneCount} zones`, 'success');
           }
           
+          // Populate dropdowns
           TaskV2RMFUtils.populateRobotDropdown({ node });
           TaskV2RMFUtils.populateFleetDropdown({ node });
           
-          // Refresh event dropdowns with new data
-          const eventsContainer = $('#events-container');
-          if (eventsContainer.length > 0) {
-            TaskV2EventUtils.refreshAllEventDropdowns(eventsContainer);
-            
-            // If we have saved events, restore their values after refresh
-            if (node.events && node.events.length > 0) {
-              setTimeout(() => {
-                TaskV2EventUtils.restoreEventValues(eventsContainer, node.events);
-              }, 200);
-            }
-          }
+          // Update task configuration with new data
+          const taskType = $('#node-input-task_type').val();
+          const container = $('#task-config-container');
+          TaskV2Utils.setupTaskType(container, taskType, node.task_data);
         }).fail(function(xhr, status, error) {
-          TaskV2RMFUtils.showDataStatus('Failed to connect to RMF data source', 'error');
+          console.error('Failed to load RMF data:', error);
           node.rmfData = { robots: [], fleets: [], navGraphs: [], zones: [] };
+          node.rmfDataLoaded = true;
+          
           TaskV2RMFUtils.populateRobotDropdown({ node });
           TaskV2RMFUtils.populateFleetDropdown({ node });
         });
@@ -977,51 +1818,34 @@
           setTimeout(() => {
             button.html(originalText);
             button.prop('disabled', false);
-            
-            // Refresh event dropdowns after data reload
-            const eventsContainer = $('#events-container');
-            if (eventsContainer.length > 0) {
-              TaskV2EventUtils.refreshAllEventDropdowns(eventsContainer);
-              
-              // If we have saved events, restore their values after refresh
-              if (node.events && node.events.length > 0) {
-                setTimeout(() => {
-                  TaskV2EventUtils.restoreEventValues(eventsContainer, node.events);
-                }, 200);
-              }
-            }
           }, 1000);
         });
       }
       
       function setupChangeHandlers() {
         TaskV2RMFUtils.setupRobotFleetHandlers({ node });
+        
+        // Task type change handler
+        $('#node-input-task_type').on('change', function() {
+          const taskType = $(this).val();
+          const container = $('#task-config-container');
+          TaskV2Utils.setupTaskType(container, taskType, {});
+        });
       }
       
-      function setupEventsManagement() {
-        const eventsContainer = $('#events-container');
+      function setupTaskManagement() {
+        // Initialize task configuration based on current type
+        const taskType = $('#node-input-task_type').val() || node.task_type || 'compose';
+        $('#node-input-task_type').val(taskType);
         
-        // Add event button
-        $('#add-event').on('click', function() {
-          TaskV2EventUtils.addEvent(eventsContainer);
-        });
-        
-        // Initialize with existing events or default
-        TaskV2EventUtils.setEventsData(eventsContainer, node.events);
-        
-        // If we have RMF data already loaded and events, restore values
-        if (node.rmfData && (node.rmfData.navGraphs?.length > 0 || node.rmfData.zones?.length > 0) && node.events?.length > 0) {
-          setTimeout(() => {
-            TaskV2EventUtils.restoreEventValues(eventsContainer, node.events);
-          }, 200);
-        }
+        const container = $('#task-config-container');
+        TaskV2Utils.setupTaskType(container, taskType, node.task_data);
       }
     },
     
     oneditsave: function() {
-      // Save events data
-      const eventsContainer = $('#events-container');
-      this.events = TaskV2EventUtils.getEventsData(eventsContainer);
+      // Save task data
+      this.task_data = TaskV2Utils.getTaskData($('#task-config-container'));
     }
   });
 </script>
@@ -1055,47 +1879,39 @@
   </div>
   
   <div class="form-row">
-    <label for="node-input-task_category">Task Title</label>
-    <input type="text" id="node-input-task_category" placeholder="e.g., Patrol, Cleaning, Custom Task" style="width: 100%;">
+    <label for="node-input-task_type">Task Type</label>
+    <select id="node-input-task_type" style="width: 100%;">
+      <option value="compose">Compose</option>
+      <option value="patrol">Patrol</option>
+      <option value="zone">Zone</option>
+      <option value="couple">Couple</option>
+      <option value="decouple">Decouple</option>
+    </select>
   </div>
   
-  <div class="form-row">
-    <label for="node-input-task_detail">Task Detail</label>
-    <input type="text" id="node-input-task_detail" placeholder="Optional description" style="width: 100%;">
-  </div>
-  
-  <div class="form-row">
-    <label>Events</label>
-    <div style="margin-top: 10px;">
-      <button type="button" id="add-event" class="red-ui-button">
-        <i class="fa fa-plus"></i> Add Event
-      </button>
-    </div>
-    <div id="events-container" style="margin-top: 10px; max-height: 400px; overflow-y: auto;">
-      <!-- Events will be dynamically added here -->
-    </div>
+  <div id="task-config-container">
+    <!-- Task-specific configuration will be dynamically added here -->
   </div>
   
   <div class="form-tips">
     <b>RMF Task V2:</b><br/>
-    Creates static compose tasks with predefined sequences of events. Unlike Dynamic Events, Task V2 executes a fixed workflow from start to completion.<br/><br/>
+    Creates RMF tasks with different types and structures.<br/><br/>
+    
+    <b>Task Types:</b><br/>
+    • <b>Compose:</b> Custom tasks with phases containing sequential events<br/>
+    • <b>Patrol:</b> Patrol between multiple places for specified rounds<br/>
+    • <b>Zone:</b> Navigate to a specific zone<br/>
+    • <b>Couple:</b> Coordinate multiple robots to couple at a zone<br/>
+    • <b>Decouple:</b> Separate coupled robots at a zone<br/><br/>
     
     <b>Robot Assignment:</b><br/>
     • Specify robot name + fleet for dedicated assignment<br/>
-    • Leave empty for automatic dispatch to any available robot<br/><br/>
-    
-    <b>Events:</b><br/>
-    • Go To Place: Navigate to a specific waypoint location<br/>
-    • Go To Zone: Navigate to a zone with priority-ordered waypoint selection and individual orientations<br/>
-    • Perform Action: Execute custom actions (teleop, cleaning, etc.)<br/>
-    • Events execute in order as a sequence within a single phase
+    • Leave empty for automatic dispatch to any available robot
   </div>
 </script>
 
 <script type="text/html" data-help-name="start-taskV2">
-  <p>Creates complete robot task workflows with predefined action sequences (RMF 1.0 compose tasks). This legacy approach defines all actions upfront in a single monolithic task.</p>
-  
-  <p><strong>🆕 For new projects, consider using RMF Dynamic Events instead:</strong> start-task → goto-place → perform-action → end-task for more flexible, real-time control.</p>
+  <p>Creates RMF Task V2 requests with support for different task types including compose, patrol, zone, couple, and decouple tasks.</p>
   
   <h3>Configuration</h3>
   <dl class="message-properties">
@@ -1105,14 +1921,8 @@
     <dt>Robot Fleet <span class="property-type">string</span></dt>
     <dd>Target robot fleet (optional for dispatch). Auto-selected when robot is chosen.</dd>
     
-    <dt>Task Title <span class="property-type">string</span></dt>
-    <dd>Descriptive category for the task (e.g., "Patrol", "Cleaning").</dd>
-    
-    <dt>Task Detail <span class="property-type">string</span></dt>
-    <dd>Optional detailed description of the task.</dd>
-    
-    <dt>Events <span class="property-type">array</span></dt>
-    <dd>Sequence of events to execute. Events run in order within a single phase.</dd>
+    <dt>Task Type <span class="property-type">string</span></dt>
+    <dd>Type of task to create: compose, patrol, zone, couple, or decouple.</dd>
   </dl>
   
   <h3>Inputs</h3>
@@ -1123,14 +1933,11 @@
     <dt>msg.rmf_robot_fleet <span class="property-type">string</span></dt>
     <dd>Robot fleet (overrides config)</dd>
     
-    <dt>msg.task_title <span class="property-type">string</span></dt>
-    <dd>Task title (overrides config)</dd>
+    <dt>msg.task_type <span class="property-type">string</span></dt>
+    <dd>Task type (overrides config)</dd>
     
-    <dt>msg.task_detail <span class="property-type">string</span></dt>
-    <dd>Task detail (overrides config)</dd>
-    
-    <dt>msg.events <span class="property-type">array</span></dt>
-    <dd>Events array (overrides config)</dd>
+    <dt>msg.task_data <span class="property-type">object</span></dt>
+    <dd>Task-specific data (overrides config)</dd>
   </dl>
   
   <h3>Outputs</h3>
@@ -1177,17 +1984,12 @@
     </li>
   </ol>
   
-  <h3>Details</h3>
-  <p>This node creates RMF Task V2 compose tasks with static event sequences. Unlike Dynamic Events, these tasks have a predefined workflow that executes from start to completion without runtime modification.</p>
-  
-  <p><strong>Task Structure:</strong> Task → Phase → Sequence → Events</p>
-  
-  <p><strong>Supported Events:</strong></p>
+  <h3>Task Types</h3>
   <ul>
-    <li><strong>Go To Place:</strong> Navigate robot to a specific waypoint</li>
-    <li><strong>Go To Zone:</strong> Navigate robot to a zone with priority-ordered waypoint selection, individual waypoint orientations, and facing direction</li>
-    <li><strong>Perform Action:</strong> Execute custom actions with configurable category and description</li>
+    <li><strong>Compose:</strong> Multi-phase tasks with custom event sequences</li>
+    <li><strong>Patrol:</strong> Navigate between multiple places for specified rounds</li>
+    <li><strong>Zone:</strong> Navigate to a specific zone</li>
+    <li><strong>Couple:</strong> Coordinate multiple robots to couple at a zone</li>
+    <li><strong>Decouple:</strong> Separate coupled robots at a zone</li>
   </ul>
-  
-  <p><strong>Assignment:</strong> Specify robot/fleet for dedicated assignment, or leave empty for automatic dispatch to any available robot.</p>
 </script>
