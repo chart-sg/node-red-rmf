@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.6] - 2024-12-11
+
+### Added
+- **Arm Manipulation Task Support** in start-taskV2 node
+  - New "Arm Manipulation" task type with dual-action capability (pick + place sequences)
+  - Real-time ROS service integration for effector readiness validation via `{fleet}_effector_query`
+  - Automatic zone lookup via `mm_zone_query` service with intelligent fallback mapping
+  - Progressive form validation with dependent field enabling for optimal UX
+  - Support for RMF MM fleet adapters and operations
+
+
+
 ## [1.0.5] - 2025-12-10
 
 ### Added

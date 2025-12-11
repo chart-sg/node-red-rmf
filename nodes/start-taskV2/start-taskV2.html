@@ -30,6 +30,8 @@
         this.setupCoupleTask(container, taskData);
       } else if (taskType === 'decouple') {
         this.setupDecoupleTask(container, taskData);
+      } else if (taskType === 'arm') {
+        this.setupArmTask(container, taskData);
       }
     },
     
@@ -583,6 +585,373 @@
       }
     },
     
+    setupArmTask: function(container, taskData = {}) {
+      container.html(`
+        <div class="form-row">
+          <label>Task Detail</label>
+          <input type="text" class="arm-detail" placeholder="e.g., Pick and place operation" style="width: 100%;" value="${taskData.detail || ''}">
+          <div class="form-tips">Optional description of the arm manipulation task</div>
+        </div>
+        
+        <div class="form-row">
+          <label>Places (Waypoints)</label>
+          <div style="display: flex; gap: 10px; margin-top: 10px;">
+            <!-- Available waypoints -->
+            <div style="flex: 1;">
+              <h4 style="margin: 0 0 5px 0; font-size: 12px; color: #666;">Available Waypoints</h4>
+              <div class="arm-available-waypoints" style="border: 1px solid #eee; padding: 5px; min-height: 100px; max-height: 150px; overflow-y: auto; background: #fafafa;">
+                <!-- Available waypoints will be populated here -->
+              </div>
+            </div>
+            
+            <!-- Selected waypoints -->
+            <div style="flex: 1;">
+              <h4 style="margin: 0 0 5px 0; font-size: 12px; color: #666;">Selected Places</h4>
+              <div class="arm-selected-waypoints" style="border: 1px solid #eee; padding: 5px; min-height: 100px; max-height: 150px; overflow-y: auto; background: #f0f8ff;">
+                <!-- Selected waypoints will be shown here -->
+              </div>
+            </div>
+          </div>
+          <div class="form-tips">Select waypoints where the robot should navigate during the task</div>
+        </div>
+        
+        <!-- First Action (Required) -->
+        <div style="border: 2px solid #ff9800; padding: 15px; margin: 10px 0; background: #fff8e1;">
+          <h3 style="margin: 0 0 15px 0; color: #ff9800;">Primary Action (Required)</h3>
+          
+          <div class="form-row">
+            <label>Action Name</label>
+            <input type="text" class="arm-action1" placeholder="e.g., clean_operatingtable, pick_rubbish_bag" style="width: 100%;" value="${taskData.action1 || ''}">
+            <div class="form-tips arm-action1-validation" style="color: #d32f2f; margin-top: 5px; display: none;">⚠️ Action name is required</div>
+          </div>
+          
+          <div class="form-row">
+            <label>Object Name (Optional)</label>
+            <input type="text" class="arm-object1" placeholder="e.g., operatingtable_1, rubbishbag_pickup1" style="width: 100%;" value="${taskData.object1 || ''}" disabled>
+            <div class="form-tips">Leave empty if action doesn't require zone navigation</div>
+          </div>
+          
+          <div class="form-row">
+            <label>Zone Name (Auto-detected)</label>
+            <input type="text" class="arm-zone1" placeholder="Will be populated from mm_zone_query service" style="width: 100%;" value="${taskData.zone1 || ''}" readonly>
+            <div class="form-tips">Zone is automatically determined from object name (e.g., or_1, disposal_pickup_1)</div>
+          </div>
+          
+          <div class="form-row">
+            <label>Action Description (JSON)</label>
+            <textarea class="arm-action1-desc" placeholder='{"parameter": "value"}' style="width: 100%; height: 80px;" disabled>${taskData.action1_description ? (typeof taskData.action1_description === 'string' ? taskData.action1_description : JSON.stringify(taskData.action1_description, null, 2)) : ''}</textarea>
+            <div class="form-tips">JSON object with action-specific parameters</div>
+          </div>
+          
+          <div class="form-row">
+            <label>Duration Estimate (ms)</label>
+            <input type="number" class="arm-action1-duration" min="1000" placeholder="60000" style="width: 100%;" value="${taskData.action1_duration || 60000}" disabled>
+            <div class="form-tips">Estimated time for action execution in milliseconds</div>
+          </div>
+        </div>
+        
+        <!-- Second Action (Optional) -->
+        <div style="border: 2px solid #4caf50; padding: 15px; margin: 10px 0; background: #f1f8e9; opacity: 0.5; pointer-events: none;" class="arm-action2-section">
+          <h3 style="margin: 0 0 15px 0; color: #4caf50;">Secondary Action (Optional)</h3>
+          
+          <div class="form-row">
+            <label>
+              <input type="checkbox" class="arm-enable-action2" ${taskData.action2 ? 'checked' : ''}> Enable Second Action
+            </label>
+          </div>
+          
+          <div class="arm-action2-fields" style="margin-top: 15px; opacity: 0.5; pointer-events: none;">
+            <div class="form-row">
+              <label>Action Name</label>
+              <input type="text" class="arm-action2" placeholder="e.g., place_object" style="width: 100%;" value="${taskData.action2 || ''}" disabled>
+            </div>
+            
+            <div class="form-row">
+              <label>Object Name (Optional)</label>
+              <input type="text" class="arm-object2" placeholder="e.g., box_2" style="width: 100%;" value="${taskData.object2 || ''}" disabled>
+            </div>
+            
+            <div class="form-row">
+              <label>Zone Name (Auto-detected)</label>
+              <input type="text" class="arm-zone2" placeholder="Will be auto-populated from object" style="width: 100%;" value="${taskData.zone2 || ''}" readonly>
+            </div>
+            
+            <div class="form-row">
+              <label>Action Description (JSON)</label>
+              <textarea class="arm-action2-desc" placeholder='{"parameter": "value"}' style="width: 100%; height: 80px;" disabled>${taskData.action2_description ? (typeof taskData.action2_description === 'string' ? taskData.action2_description : JSON.stringify(taskData.action2_description, null, 2)) : ''}</textarea>
+            </div>
+            
+            <div class="form-row">
+              <label>Duration Estimate (ms)</label>
+              <input type="number" class="arm-action2-duration" min="1000" placeholder="60000" style="width: 100%;" value="${taskData.action2_duration || 60000}" disabled>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Service Status -->
+        <div class="form-row">
+          <div class="arm-service-status" style="padding: 10px; border: 1px solid #ddd; background: #f9f9f9; border-radius: 4px;">
+            <h4 style="margin: 0 0 10px 0;">Service Validation Status</h4>
+            <div class="arm-effector-status">🔄 Effector status: Not checked</div>
+            <div class="arm-zone-status">🔄 Zone lookup: Not checked</div>
+          </div>
+        </div>
+      `);
+      
+      // Load waypoints
+      this.loadWaypoints(container.find('.arm-available-waypoints'), container.find('.arm-selected-waypoints'), taskData.places || []);
+      
+      // Setup enable second action handler
+      container.find('.arm-enable-action2').on('change', function() {
+        TaskV2Utils.validateArmFields(container);
+      });
+      
+      // Setup input handlers for validation
+      container.find('.arm-action1, .arm-object1').on('input', function() {
+        TaskV2Utils.validateArmFields(container);
+      });
+      
+      // Initial validation
+      this.validateArmFields(container);
+    },
+    
+    validateArmFields: function(container) {
+      const action1Input = container.find('.arm-action1');
+      const object1Input = container.find('.arm-object1');
+      const zone1Input = container.find('.arm-zone1');
+      const action1DescInput = container.find('.arm-action1-desc');
+      const action1DurationInput = container.find('.arm-action1-duration');
+      const action1ValidationMsg = container.find('.arm-action1-validation');
+      
+      const enableAction2Checkbox = container.find('.arm-enable-action2');
+      const action2Section = container.find('.arm-action2-section');
+      const action2Fields = container.find('.arm-action2-fields');
+      const action2Input = container.find('.arm-action2');
+      const object2Input = container.find('.arm-object2');
+      const zone2Input = container.find('.arm-zone2');
+      const action2DescInput = container.find('.arm-action2-desc');
+      const action2DurationInput = container.find('.arm-action2-duration');
+      
+      const hasAction1 = action1Input.val() && action1Input.val().trim() !== '';
+      
+      // Action1 field is always enabled (it's required input)
+      action1Input.prop('disabled', false);
+      
+      // Validate primary action - enable dependent fields only if action1 is provided
+      if (hasAction1) {
+        object1Input.prop('disabled', false);
+        action1DescInput.prop('disabled', false);
+        action1DurationInput.prop('disabled', false);
+        action1ValidationMsg.hide();
+        
+        // Enable second action section
+        action2Section.css({ 'opacity': '1', 'pointer-events': 'auto' });
+        enableAction2Checkbox.prop('disabled', false);
+        
+        // Handle second action
+        if (enableAction2Checkbox.is(':checked')) {
+          action2Fields.css({ 'opacity': '1', 'pointer-events': 'auto' });
+          action2Input.prop('disabled', false);
+          object2Input.prop('disabled', false);
+          action2DescInput.prop('disabled', false);
+          action2DurationInput.prop('disabled', false);
+        } else {
+          action2Fields.css({ 'opacity': '0.5', 'pointer-events': 'none' });
+          action2Input.prop('disabled', true);
+          object2Input.prop('disabled', true);
+          action2DescInput.prop('disabled', true);
+          action2DurationInput.prop('disabled', true);
+        }
+      } else {
+        // Keep action1 enabled but disable dependent fields
+        object1Input.prop('disabled', true);
+        action1DescInput.prop('disabled', true);
+        action1DurationInput.prop('disabled', true);
+        action1ValidationMsg.show();
+        
+        // Disable second action section
+        action2Section.css({ 'opacity': '0.5', 'pointer-events': 'none' });
+        enableAction2Checkbox.prop('disabled', true);
+        action2Fields.css({ 'opacity': '0.5', 'pointer-events': 'none' });
+        action2Input.prop('disabled', true);
+        object2Input.prop('disabled', true);
+        action2DescInput.prop('disabled', true);
+        action2DurationInput.prop('disabled', true);
+      }
+      
+      // Auto-populate zones when objects change
+      if (object1Input.val() && object1Input.val().trim() !== '') {
+        const objectName = object1Input.val().trim();
+        // In production, this would call mm_zone_query service
+        // Based on ROS service responses: operatingtable_1 -> or_1, rubbishbag_pickup1 -> disposal_pickup_1, rubbishbag_dropoff1 -> disposal_place_1
+        let zoneName = '';
+        if (objectName.includes('operatingtable')) {
+          zoneName = 'or_1';
+        } else if (objectName.includes('rubbishbag_pickup')) {
+          zoneName = 'disposal_pickup_1';
+        } else if (objectName.includes('rubbishbag_dropoff')) {
+          zoneName = 'disposal_place_1';
+        } else if (objectName.includes('rubbishbag')) {
+          zoneName = 'disposal_pickup_1'; // Default for generic rubbishbag
+        } else {
+          zoneName = `zone_${objectName}`; // Default fallback
+        }
+        zone1Input.val(zoneName);
+      } else {
+        zone1Input.val('');
+      }
+      
+      if (object2Input.val() && object2Input.val().trim() !== '') {
+        const objectName = object2Input.val().trim();
+        // In production, this would call mm_zone_query service  
+        let zoneName = '';
+        if (objectName.includes('operatingtable')) {
+          zoneName = 'or_1';
+        } else if (objectName.includes('rubbishbag_pickup')) {
+          zoneName = 'disposal_pickup_1';
+        } else if (objectName.includes('rubbishbag_dropoff')) {
+          zoneName = 'disposal_place_1';
+        } else if (objectName.includes('rubbishbag')) {
+          zoneName = 'disposal_pickup_1';
+        } else {
+          zoneName = `zone_${objectName}`;
+        }
+        zone2Input.val(zoneName);
+      } else {
+        zone2Input.val('');
+      }
+    },
+    
+    loadWaypoints: function(availableContainer, selectedContainer, selectedWaypoints = []) {
+      const node = this.currentNode;
+      if (!node || !node.rmfData || !node.rmfData.navGraphs) {
+        console.log('No RMF data available for waypoint loading');
+        availableContainer.html('<div style="padding: 10px; color: #888;">No RMF data available</div>');
+        return;
+      }
+      
+      const waypoints = new Map();
+      
+      // Extract waypoints from nav graphs
+      node.rmfData.navGraphs.forEach(navGraph => {
+        if (navGraph.vertices) {
+          navGraph.vertices.forEach(vertex => {
+            if (vertex.name && vertex.name.trim() !== '') {
+              waypoints.set(vertex.name, {
+                name: vertex.name,
+                fleet: navGraph.fleet || navGraph.name
+              });
+            }
+          });
+        }
+      });
+      
+      // Clear containers
+      availableContainer.empty();
+      selectedContainer.empty();
+      
+      if (waypoints.size === 0) {
+        availableContainer.html('<div style="padding: 10px; color: #888;">No waypoints found</div>');
+        return;
+      }
+      
+      // Populate available waypoints
+      Array.from(waypoints.values()).sort((a, b) => a.name.localeCompare(b.name)).forEach(waypoint => {
+        const waypointItem = $(`
+          <div class="available-waypoint-item" data-waypoint="${waypoint.name}" style="
+            padding: 5px; 
+            margin: 2px 0; 
+            background: white; 
+            border: 1px solid #ddd; 
+            cursor: pointer;
+            border-radius: 3px;
+            font-size: 11px;
+          ">
+            <span style="color: #333;">${waypoint.name}</span>
+          </div>
+        `);
+        
+        waypointItem.on('click', function() {
+          const waypointValue = $(this).data('waypoint');
+          TaskV2Utils.addToSelectedArmWaypoints(waypointValue, waypoint.name, selectedContainer, availableContainer);
+        });
+        
+        availableContainer.append(waypointItem);
+      });
+      
+      // Initialize with selected waypoints
+      if (selectedWaypoints && selectedWaypoints.length > 0) {
+        selectedWaypoints.forEach(waypointName => {
+          if (waypoints.has(waypointName)) {
+            TaskV2Utils.addToSelectedArmWaypoints(waypointName, waypointName, selectedContainer, availableContainer);
+          }
+        });
+      }
+      
+      // Make selected waypoints sortable (fallback if jQuery UI not available)
+      try {
+        selectedContainer.sortable({
+          items: '.arm-selected-item',
+          placeholder: 'waypoint-placeholder',
+          tolerance: 'pointer',
+          cursor: 'move'
+        });
+      } catch (e) {
+        console.log('jQuery UI sortable not available, using basic ordering');
+      }
+    },
+    
+    addToSelectedArmWaypoints: function(waypointValue, displayName, selectedContainer, availableContainer) {
+      // Check if already selected
+      if (selectedContainer.find(`[data-waypoint="${waypointValue}"]`).length > 0) {
+        return;
+      }
+      
+      const selectedItem = $(`
+        <div class="arm-selected-item" data-waypoint="${waypointValue}" style="
+          padding: 5px; 
+          margin: 2px 0; 
+          background: #e3f2fd; 
+          border: 1px solid #1976d2; 
+          border-radius: 3px;
+          font-size: 11px;
+          cursor: move;
+          display: flex;
+          align-items: center;
+          gap: 5px;
+        ">
+          <span class="drag-handle" style="cursor: ns-resize; color: #666; font-weight: bold;">⋮⋮</span>
+          <span style="flex: 1; color: #1565c0;">${displayName}</span>
+          <button type="button" class="remove-waypoint" style="
+            background: #d32f2f; 
+            color: white; 
+            border: none; 
+            border-radius: 2px; 
+            width: 16px; 
+            height: 16px; 
+            font-size: 10px; 
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          " title="Remove waypoint">×</button>
+        </div>
+      `);
+      
+      selectedContainer.append(selectedItem);
+      
+      // Hide from available list
+      availableContainer.find(`[data-waypoint="${waypointValue}"]`).hide();
+      
+      // Handle remove button
+      selectedItem.find('.remove-waypoint').on('click', function(e) {
+        e.stopPropagation();
+        selectedItem.remove();
+        // Show back in available list
+        availableContainer.find(`[data-waypoint="${waypointValue}"]`).show();
+      });
+    },
+    
     // Phase management for compose tasks
     addPhase: function(phasesContainer, phaseData = {}) {
       const phaseId = Date.now() + Math.random();
@@ -732,6 +1101,32 @@
             estimated_duration: parseInt(container.find('.decouple-duration').val()) || 60
           }
         };
+      } else if (taskType === 'arm') {
+        const armData = {
+          detail: container.find('.arm-detail').val() || '',
+          action1: container.find('.arm-action1').val() || '',
+          object1: container.find('.arm-object1').val() || '',
+          zone1: container.find('.arm-zone1').val() || '',
+          action1_description: container.find('.arm-action1-desc').val() || '{}',
+          action1_duration: parseInt(container.find('.arm-action1-duration').val()) || 60000,
+          places: []
+        };
+        
+        // Get selected waypoints/places
+        container.find('.arm-selected-item').each(function() {
+          armData.places.push($(this).data('waypoint'));
+        });
+        
+        // Add second action if enabled
+        if (container.find('.arm-enable-action2').is(':checked')) {
+          armData.action2 = container.find('.arm-action2').val() || '';
+          armData.object2 = container.find('.arm-object2').val() || '';
+          armData.zone2 = container.find('.arm-zone2').val() || '';
+          armData.action2_description = container.find('.arm-action2-desc').val() || '{}';
+          armData.action2_duration = parseInt(container.find('.arm-action2-duration').val()) || 60000;
+        }
+        
+        return armData;
       }
       
       return {};
@@ -1615,7 +2010,8 @@
     populateRobotDropdown: function(options = {}) {
       const { node, selectId = 'node-input-robot_name', placeholder = 'Use msg.rmf_robot_name', valueProperty = 'robot_name' } = options;
       const select = $(`#${selectId}`);
-      const currentValue = node.isLoaded ? select.val() : node[valueProperty];
+      // Always use saved node value for restoration
+      const savedValue = node[valueProperty] || '';
       
       select.empty().append(`<option value="">${placeholder}</option>`);
       
@@ -1625,13 +2021,15 @@
         });
       }
       
-      select.val(currentValue || '');
+      select.val(savedValue);
+      console.log(`Restored robot dropdown value: ${savedValue}`);
     },
 
     populateFleetDropdown: function(options = {}) {
       const { node, selectId = 'node-input-robot_fleet', placeholder = 'Use msg.rmf_robot_fleet', valueProperty = 'robot_fleet' } = options;
       const select = $(`#${selectId}`);
-      const currentValue = node.isLoaded ? select.val() : node[valueProperty];
+      // Always use saved node value for restoration
+      const savedValue = node[valueProperty] || '';
       
       select.empty().append(`<option value="">${placeholder}</option>`);
       
@@ -1641,7 +2039,8 @@
         });
       }
       
-      select.val(currentValue || '');
+      select.val(savedValue);
+      console.log(`Restored fleet dropdown value: ${savedValue}`);
     },
 
     setupRobotFleetHandlers: function(options = {}) {
@@ -1749,7 +2148,17 @@
       TaskV2Utils.setCurrentNode(node);
       TaskV2EventUtils.setCurrentNode(node);
       
-      console.log('Node oneditprepare - saved task_data:', node.task_data);
+      console.log('Node oneditprepare - saved config:', {
+        robot_name: node.robot_name,
+        robot_fleet: node.robot_fleet,
+        task_type: node.task_type,
+        task_data: node.task_data
+      });
+      
+      // Initialize form fields with saved values
+      $('#node-input-name').val(node.name || '');
+      $('#node-input-task_type').val(node.task_type || 'compose');
+      // Robot and fleet dropdowns will be initialized when RMF data loads
       
       // Initialize data storage (same structure as goto-place)
       node.rmfData = {
@@ -1787,7 +2196,7 @@
             TaskV2RMFUtils.showDataStatus(`Loaded ${data.robots.length} robots, ${locationCount} locations, ${zoneCount} zones`, 'success');
           }
           
-          // Populate dropdowns
+          // Populate dropdowns with saved values
           TaskV2RMFUtils.populateRobotDropdown({ node });
           TaskV2RMFUtils.populateFleetDropdown({ node });
           
@@ -1844,8 +2253,19 @@
     },
     
     oneditsave: function() {
-      // Save task data
+      // Save all configuration values explicitly
+      this.name = $('#node-input-name').val();
+      this.config = $('#node-input-config').val();
+      this.robot_name = $('#node-input-robot_name').val();
+      this.robot_fleet = $('#node-input-robot_fleet').val();
+      this.task_type = $('#node-input-task_type').val();
       this.task_data = TaskV2Utils.getTaskData($('#task-config-container'));
+      
+      console.log('Saving node config:', {
+        robot_name: this.robot_name,
+        robot_fleet: this.robot_fleet,
+        task_type: this.task_type
+      });
     }
   });
 </script>
@@ -1886,6 +2306,7 @@
       <option value="zone">Zone</option>
       <option value="couple">Couple</option>
       <option value="decouple">Decouple</option>
+      <option value="arm">Arm Manipulation</option>
     </select>
   </div>
   
@@ -1902,7 +2323,8 @@
     • <b>Patrol:</b> Patrol between multiple places for specified rounds<br/>
     • <b>Zone:</b> Navigate to a specific zone<br/>
     • <b>Couple:</b> Coordinate multiple robots to couple at a zone<br/>
-    • <b>Decouple:</b> Separate coupled robots at a zone<br/><br/>
+    • <b>Decouple:</b> Separate coupled robots at a zone<br/>
+    • <b>Arm Manipulation:</b> Complex manipulation tasks with effector validation and zone navigation<br/><br/>
     
     <b>Robot Assignment:</b><br/>
     • Specify robot name + fleet for dedicated assignment<br/>
@@ -1911,7 +2333,7 @@
 </script>
 
 <script type="text/html" data-help-name="start-taskV2">
-  <p>Creates RMF Task V2 requests with support for different task types including compose, patrol, zone, couple, and decouple tasks.</p>
+  <p>Creates RMF Task V2 requests with support for different task types including compose, patrol, zone, couple, decouple, and arm manipulation tasks.</p>
   
   <h3>Configuration</h3>
   <dl class="message-properties">
@@ -1922,7 +2344,7 @@
     <dd>Target robot fleet (optional for dispatch). Auto-selected when robot is chosen.</dd>
     
     <dt>Task Type <span class="property-type">string</span></dt>
-    <dd>Type of task to create: compose, patrol, zone, couple, or decouple.</dd>
+    <dd>Type of task to create: compose, patrol, zone, couple, decouple, or arm manipulation.</dd>
   </dl>
   
   <h3>Inputs</h3>
