@@ -171,6 +171,9 @@ class RMFRobotManager {
           this.logDynamicEventStatusUpdate(robotName, fleetName, updates.dynamic_event_status);
         }
         
+        // Check for robot mode changes and notify callbacks
+        this.checkRobotModeChanges([mergedUpdate]);
+        
         console.log(`RMF Robot Manager: Updated robot ${robotName} (${fleetName}) context:`, updates);
         return { success: true, robot: mergedUpdate };
       } else {
@@ -441,6 +444,121 @@ class RMFRobotManager {
   }
 
   /**
+   * Register callback for robot mode changes
+   * @param {Function} callback - Callback function (robotName, fleetName, oldMode, newMode) => void
+   * @returns {boolean} Success status
+   */
+  onRobotModeChanged(callback) {
+    if (typeof callback !== 'function') {
+      console.error('RMF Robot Manager: onRobotModeChanged requires a function callback');
+      return false;
+    }
+    
+    this.robotModeChangeCallbacks.add(callback);
+    console.log(`RMF Robot Manager: Robot mode change callback registered. Total callbacks: ${this.robotModeChangeCallbacks.size}`);
+    return true;
+  }
+
+  /**
+   * Unregister callback for robot mode changes
+   * @param {Function} callback - Callback function to remove
+   * @returns {boolean} Success status
+   */
+  offRobotModeChanged(callback) {
+    const removed = this.robotModeChangeCallbacks.delete(callback);
+    if (removed) {
+      console.log(`RMF Robot Manager: Robot mode change callback removed. Remaining callbacks: ${this.robotModeChangeCallbacks.size}`);
+    }
+    return removed;
+  }
+
+  /**
+   * Register callback for robot discovery
+   * @param {Function} callback - Callback function (robotName, fleetName, robot) => void
+   * @returns {boolean} Success status
+   */
+  onRobotDiscovered(callback) {
+    if (typeof callback !== 'function') {
+      console.error('RMF Robot Manager: onRobotDiscovered requires a function callback');
+      return false;
+    }
+    
+    this.robotDiscoveryCallbacks.add(callback);
+    console.log(`RMF Robot Manager: Robot discovery callback registered. Total callbacks: ${this.robotDiscoveryCallbacks.size}`);
+    return true;
+  }
+
+  /**
+   * Unregister callback for robot discovery
+   * @param {Function} callback - Callback function to remove
+   * @returns {boolean} Success status
+   */
+  offRobotDiscovered(callback) {
+    const removed = this.robotDiscoveryCallbacks.delete(callback);
+    if (removed) {
+      console.log(`RMF Robot Manager: Robot discovery callback removed. Remaining callbacks: ${this.robotDiscoveryCallbacks.size}`);
+    }
+    return removed;
+  }
+
+  /**
+   * Check for robot mode changes and notify callbacks
+   * @param {Array} robots - Current robot array
+   */
+  checkRobotModeChanges(robots) {
+    if (this.robotModeChangeCallbacks.size === 0) {
+      return; // No callbacks registered, skip processing
+    }
+
+    robots.forEach(robot => {
+      const robotKey = `${robot.fleet}:${robot.name}`;
+      const currentMode = robot.mode?.mode;
+      
+      // Skip if robot doesn't have mode information
+      if (currentMode === null || currentMode === undefined) {
+        return;
+      }
+      
+      const previousMode = this.previousRobotModes.get(robotKey);
+      
+      // Detect mode change
+      if (previousMode !== undefined && previousMode !== currentMode) {
+        console.log(`RMF Robot Manager: Robot mode changed for ${robot.name}/${robot.fleet}: ${previousMode} -> ${currentMode}`);
+        
+        // Notify all callbacks
+        this.robotModeChangeCallbacks.forEach(callback => {
+          try {
+            callback(robot.name, robot.fleet, previousMode, currentMode);
+          } catch (error) {
+            console.error('RMF Robot Manager: Error in robot mode change callback:', error);
+          }
+        });
+      }
+      
+      // Update stored mode
+      this.previousRobotModes.set(robotKey, currentMode);
+    });
+  }
+
+  /**
+   * Process robot updates and check for changes
+   * This method should be called when robot data is updated
+   * @param {Array} robots - Updated robot array
+   */
+  processRobotUpdates(robots) {
+    try {
+      // Check for robot mode changes
+      this.checkRobotModeChanges(robots);
+      
+      // TODO: Add robot discovery logic here if needed
+      // this.checkRobotDiscovery(robots);
+      
+    } catch (error) {
+      console.error('RMF Robot Manager: Error processing robot updates:', error);
+    }
+  }
+
+  /**
    * Clear robot state tracking
    */
   clearRobotStates() {
@@ -458,6 +576,8 @@ class RMFRobotManager {
     this.robotStates.clear();
     this.fleetManagers.clear();
     this.robotDiscoveryCallbacks.clear();
+    this.robotModeChangeCallbacks.clear();
+    this.previousRobotModes.clear();
     
     // Reset timing
     this.lastRobotUpdate = 0;

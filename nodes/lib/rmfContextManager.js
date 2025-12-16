@@ -75,7 +75,15 @@ function validateTaskData(task) {
 
 function processRobotData(robots) {
   const processor = rmfLifecycleManager.initializeDataProcessor();
-  return processor.processRobotData(robots);
+  const result = processor.processRobotData(robots);
+  
+  // Also notify robot manager of updates for event callbacks
+  const manager = rmfLifecycleManager.initializeRobotManager();
+  if (manager && manager.processRobotUpdates && robots) {
+    manager.processRobotUpdates(robots);
+  }
+  
+  return result;
 }
 
 function processLocationData(locations) {
