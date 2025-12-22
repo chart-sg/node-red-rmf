@@ -74,12 +74,17 @@ function validateTaskData(task) {
 }
 
 function processRobotData(robots) {
+  console.log('[DEBUG] processRobotData called with:', robots?.length || 0, 'robots');
+  
   const processor = rmfLifecycleManager.initializeDataProcessor();
   const result = processor.processRobotData(robots);
   
   // Also notify robot manager of updates for event callbacks
   const manager = rmfLifecycleManager.initializeRobotManager();
+  console.log('[DEBUG] Robot manager initialized:', !!manager, 'processRobotUpdates available:', !!manager?.processRobotUpdates);
+  
   if (manager && manager.processRobotUpdates && robots) {
+    console.log('[DEBUG] Calling processRobotUpdates with robots:', robots.map(r => `${r.name}/${r.fleet} mode:${r.mode?.mode}`));
     manager.processRobotUpdates(robots);
   }
   
@@ -253,6 +258,7 @@ function offRobotDiscovered(callback) {
 
 function onRobotModeChanged(callback) {
   const manager = rmfLifecycleManager.initializeRobotManager();
+  console.log(`[DEBUG] 🔗 [CONTEXT] Callback → instance ${manager.instanceId}`);
   return manager.onRobotModeChanged(callback);
 }
 

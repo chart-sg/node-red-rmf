@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.8] - 2025-12-22
+
+### Fixed
+- **Robot Mode Change Detection System** - Resolved critical timing and performance issues
+  - Fixed callback registration timing to occur before goal sending (was registering after task completion)
+  - Resolved BigInt serialization errors that prevented robot mode processing 
+  - Added intelligent throttling to prevent excessive fleet state processing
+  - Ensured goto-place nodes properly re-output status when robot mode changes occur
+
+### Performance
+- Optimized robot mode change detection to only process when actual changes occur
+- Reduced debug logging verbosity for cleaner system operation  
+- Added change detection to prevent unnecessary robot manager processing
+- Improved fleet state processing efficiency with smart filtering
+
+### Technical
+- Enhanced BigInt handling in robot context serialization with convertBigIntToNumber()
+- Added proper callback lifecycle management for goto-place nodes
+- Implemented throttled processing in rmfMessageTransformers with hasSignificantChanges detection
+- Fixed robot manager instance tracking and callback registration timing
+- Added getLastKnownMode() method for efficient change detection
+
+## [1.0.7] - 2025-12-16
+
+### Fixed
+- **Robot Mode Change Event System** - Fixed missing robot mode change detection for automatic status updates
+  - Added callback-based robot mode change detection in rmfRobotManager
+  - Integrated mode change notifications into robot data processing pipeline (both bulk and individual updates)
+  - Enabled goto-place and other event nodes to automatically re-output status when robot modes change
+  - Fixed nodes not updating status output when target robot transitions between modes (e.g., idle ↔ blocked ↔ moving)
+
+### Technical Details
+- Implemented `onRobotModeChanged`/`offRobotModeChanged` callback registration system in rmfRobotManager
+- Added `checkRobotModeChanges` logic with mode transition detection and callback notification
+- Enhanced `processRobotData` in rmfContextManager to trigger robot update processing
+- Added `processRobotUpdates` integration into both bulk robot updates and individual robot context updates
+- Proper cleanup and memory management for mode change callbacks on node removal
+
 ## [1.0.7] - 2025-12-16
 
 ### Fixed

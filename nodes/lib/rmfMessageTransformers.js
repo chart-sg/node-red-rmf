@@ -164,6 +164,34 @@ function transformFleetState(fleetStateMsg, context, updateCallback) {
     context.robots.push(...transformedRobots);
     context.lastUpdated.robots = new Date().toISOString();
     
+    // Trigger robot manager processing for mode change detection
+    try {
+      // Get the robot manager through the require path (same as context manager)
+      const rmfLifecycleManager = require('./rmfLifecycleManager');
+      const robotManager = rmfLifecycleManager.initializeRobotManager();
+      
+      if (robotManager) {
+        // Only process if there are active callbacks (i.e., goto-place tasks running)
+        if (robotManager.robotModeChangeCallbacks.size > 0) {
+          // Check if any robot modes have actually changed before processing
+          const hasSignificantChanges = transformedRobots.some(robot => {
+            const robotKey = `${robot.fleet}:${robot.name}`;
+            const currentMode = robot.mode?.mode;
+            const lastKnownMode = robotManager.previousRobotModes?.get(robotKey);
+            return currentMode !== lastKnownMode;
+          });
+          
+          if (hasSignificantChanges) {
+            console.log(`[DEBUG] 🔄 [FLEET STATE] Mode changes detected - processing ${transformedRobots.length} robots`);
+            robotManager.processRobotUpdates(transformedRobots);
+          }
+          // If no changes, skip processing entirely to avoid spin failures
+        }
+      }
+    } catch (error) {
+      console.error('[DEBUG] ❌ [FLEET STATE] Failed to process robots through robot manager:', error.message);
+    }
+    
     if (updateCallback) {
       updateCallback();
     }

@@ -23,7 +23,10 @@ class RMFRobotManager {
     this.lastRobotUpdate = 0;
     this.robotUpdateThrottle = 100; // ms
     
-    console.log('RMF Robot Manager: Initialized');
+    // Instance tracking for debugging
+    this.instanceId = Math.random().toString(36).substr(2, 9);
+    
+    console.log(`RMF Robot Manager: Initialized with instance ID: ${this.instanceId}`);
   }
 
   /**
@@ -45,6 +48,31 @@ class RMFRobotManager {
     const robot = robots.find(r => r.name === robotName && r.fleet === fleetName);
     
     return robot || null;
+  }
+
+  /**
+   * Check if there are any registered callbacks
+   * @returns {boolean} True if callbacks exist
+   */
+  hasCallbacks() {
+    return this.robotModeChangeCallbacks.size > 0;
+  }
+
+  /**
+   * Get count of registered callbacks
+   * @returns {number} Number of callbacks
+   */
+  getCallbackCount() {
+    return this.robotModeChangeCallbacks.size;
+  }
+
+  /**
+   * Get the last known mode for a robot (for throttling purposes)
+   * @param {string} robotKey - Robot key in format "fleet:name"
+   * @returns {number|undefined} Last known mode or undefined
+   */
+  getLastKnownMode(robotKey) {
+    return this.previousRobotModes?.get(robotKey);
   }
 
   /**
@@ -122,6 +150,11 @@ class RMFRobotManager {
    * @returns {Object} Update result
    */
   updateRobotContext(robotName, fleetName, updates) {
+    // Only log context updates when we have active callbacks or mode changes
+    if (robotName === 'tinyRobot1' && (updates.mode !== undefined || this.hasCallbacks())) {
+      console.log(`[DEBUG] 🎯 [MODE UPDATE] ${robotName}/${fleetName} mode: ${updates.mode?.mode || 'unchanged'}, callbacks: ${this.getCallbackCount()}`);
+    }
+    
     try {
       const robots = this.getAllRobots();
       const robotIndex = robots.findIndex(r => 
@@ -153,18 +186,54 @@ class RMFRobotManager {
           }
         }
         
-        // Update the robot in context
-        robots[robotIndex] = mergedUpdate;
+        // Convert BigInt values to regular numbers for serialization compatibility
+        const serializableMergedUpdate = this.convertBigIntToNumber(mergedUpdate);
+        
+        // Update the robot in context with serializable data
+        robots[robotIndex] = serializableMergedUpdate;
+        
+        // Also ensure the entire robots array is free of BigInt for context serialization
+        const allRobotsSerializable = robots.map(robot => this.convertBigIntToNumber(robot));
+        
+
         
         // Update robot state tracking
         const robotKey = `${fleetName}:${robotName}`;
         this.robotStates.set(robotKey, {
-          ...mergedUpdate,
+          ...serializableMergedUpdate,
           lastUpdated: Date.now()
         });
         
-        // Trigger context update
-        this.rmfCore.updateGlobalContext();
+        // Update the robot in the robots array with serializable data
+        robots[robotIndex] = serializableMergedUpdate;
+        
+        // Update the context with serializable robots array first
+        try {
+          this.rmfCore.updateContextData('robots', allRobotsSerializable);
+          
+
+        } catch (contextDataError) {
+          console.error(`[DEBUG] ❌ [CONTEXT] Failed to update context data:`, contextDataError.message);
+        }
+        
+        // Trigger context update with error handling
+        try {
+          this.rmfCore.updateGlobalContext();
+          
+
+        } catch (contextError) {
+          console.error(`[DEBUG] ❌ [CONTEXT] Failed to update global context:`, contextError.message);
+          
+          // Try to identify remaining BigInt issues
+          if (contextError.message.includes('BigInt')) {
+            console.log(`[DEBUG] 🔍 [BIGINT] Checking for remaining BigInt values in robots array...`);
+            allRobotsSerializable.forEach((robot, idx) => {
+              if (robot.name === robotName) {
+                console.log(`[DEBUG] 🔍 [BIGINT] Robot ${idx} data:`, this.findBigIntValues(robot));
+              }
+            });
+          }
+        }
         
         // Log status update if present
         if (updates.dynamic_event_status !== undefined) {
@@ -172,10 +241,8 @@ class RMFRobotManager {
         }
         
         // Check for robot mode changes and notify callbacks
-        this.checkRobotModeChanges([mergedUpdate]);
-        
-        console.log(`RMF Robot Manager: Updated robot ${robotName} (${fleetName}) context:`, updates);
-        return { success: true, robot: mergedUpdate };
+        this.checkRobotModeChanges([serializableMergedUpdate]);
+        return { success: true, robot: serializableMergedUpdate };
       } else {
         console.warn(`RMF Robot Manager: Robot ${robotName} from fleet ${fleetName} not found in context`);
         return { success: false, error: 'Robot not found' };
@@ -455,7 +522,7 @@ class RMFRobotManager {
     }
     
     this.robotModeChangeCallbacks.add(callback);
-    console.log(`RMF Robot Manager: Robot mode change callback registered. Total callbacks: ${this.robotModeChangeCallbacks.size}`);
+    console.log(`[DEBUG] ✅ [CALLBACK] Registered on instance ${this.instanceId}. Active callbacks: ${this.robotModeChangeCallbacks.size}`);
     return true;
   }
 
@@ -467,7 +534,7 @@ class RMFRobotManager {
   offRobotModeChanged(callback) {
     const removed = this.robotModeChangeCallbacks.delete(callback);
     if (removed) {
-      console.log(`RMF Robot Manager: Robot mode change callback removed. Remaining callbacks: ${this.robotModeChangeCallbacks.size}`);
+      console.log(`[DEBUG] ❌ [CALLBACK] Removed from instance ${this.instanceId}. Remaining callbacks: ${this.robotModeChangeCallbacks.size}`);
     }
     return removed;
   }
@@ -506,13 +573,22 @@ class RMFRobotManager {
    * @param {Array} robots - Current robot array
    */
   checkRobotModeChanges(robots) {
+
+    
     if (this.robotModeChangeCallbacks.size === 0) {
-      return; // No callbacks registered, skip processing
+      return; // No callbacks registered, skip processing silently
     }
 
-    robots.forEach(robot => {
+    // Convert BigInt values to avoid serialization errors in processing
+    const serializableRobots = robots.map(robot => this.convertBigIntToNumber(robot));
+
+    serializableRobots.forEach(robot => {
       const robotKey = `${robot.fleet}:${robot.name}`;
       const currentMode = robot.mode?.mode;
+      
+
+      
+
       
       // Skip if robot doesn't have mode information
       if (currentMode === null || currentMode === undefined) {
@@ -523,7 +599,11 @@ class RMFRobotManager {
       
       // Detect mode change
       if (previousMode !== undefined && previousMode !== currentMode) {
-        console.log(`RMF Robot Manager: Robot mode changed for ${robot.name}/${robot.fleet}: ${previousMode} -> ${currentMode}`);
+        console.log(`[DEBUG] ✅ MODE CHANGE DETECTED for ${robot.name}/${robot.fleet}: ${previousMode} -> ${currentMode}`);
+        
+        if (robot.name === 'tinyRobot1') {
+          console.log(`[DEBUG] 🎯 🚨 tinyRobot1 MODE CHANGE DETECTED! ${previousMode} -> ${currentMode}`);
+        }
         
         // Notify all callbacks
         this.robotModeChangeCallbacks.forEach(callback => {
@@ -564,6 +644,60 @@ class RMFRobotManager {
   clearRobotStates() {
     this.robotStates.clear();
     console.log('RMF Robot Manager: Robot states cleared');
+  }
+
+  /**
+   * Find BigInt values in an object for debugging
+   * @param {Object} obj - Object to search
+   * @param {string} path - Current path (for recursion)
+   * @returns {Array} Array of paths containing BigInt values
+   */
+  findBigIntValues(obj, path = '') {
+    const bigIntPaths = [];
+    
+    if (typeof obj === 'bigint') {
+      bigIntPaths.push(`${path}: ${obj}`);
+    } else if (Array.isArray(obj)) {
+      obj.forEach((item, index) => {
+        bigIntPaths.push(...this.findBigIntValues(item, `${path}[${index}]`));
+      });
+    } else if (obj !== null && typeof obj === 'object') {
+      for (const [key, value] of Object.entries(obj)) {
+        const currentPath = path ? `${path}.${key}` : key;
+        bigIntPaths.push(...this.findBigIntValues(value, currentPath));
+      }
+    }
+    
+    return bigIntPaths;
+  }
+
+  /**
+   * Convert BigInt values to regular numbers for JSON serialization compatibility
+   * @param {Object} obj - Object that may contain BigInt values
+   * @returns {Object} Object with BigInt values converted to numbers
+   */
+  convertBigIntToNumber(obj) {
+    if (obj === null || obj === undefined) {
+      return obj;
+    }
+    
+    if (typeof obj === 'bigint') {
+      return Number(obj);
+    }
+    
+    if (Array.isArray(obj)) {
+      return obj.map(item => this.convertBigIntToNumber(item));
+    }
+    
+    if (typeof obj === 'object') {
+      const converted = {};
+      for (const [key, value] of Object.entries(obj)) {
+        converted[key] = this.convertBigIntToNumber(value);
+      }
+      return converted;
+    }
+    
+    return obj;
   }
 
   /**
